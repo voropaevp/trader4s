@@ -1,0 +1,14 @@
+# Project exclude paths
+/project/project/target/
+/project/target/
+/ibFeed/target
+/ibCassandraModel/target
+/target/
+/target/scala-2.12/classes/
+/utils/target/
+/.idea/
+/.ops/
+/ops
+/.bsp/
+/thirdPartyJars
+/docker-compose.yml

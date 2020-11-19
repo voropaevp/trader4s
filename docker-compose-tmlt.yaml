@@ -1,0 +1,22 @@
+version: "3.9"
+services:
+  ibkr:
+    image: ibgateway:latest
+    ports:
+      - "4002:4002"
+      - "5900:5900"
+    environment:
+      - TWSUSERID=fdemo
+      - TWSPASSWORD=demouser
+
+  cassandra:
+    image: bitnami/cassandra:latest
+    environment:
+       - CASSANDRA_PASSWORD=P@ssw0rd
+#      - CASSANDRA_KEYSTORE_PASSWORD=cassandra
+#      - CASSANDRA_TRUSTSTORE_PASSWORD=P@ssw0rd123!
+#      - CASSANDRA_CLIENT_ENCRYPTION=true
+    volumes:
+      - C:\Users\vorop\IdeaProjects\mltrader\ops\cassandra_data:/bitnami:rw
+#      - C:\Users\vorop\IdeaProjects\mltrader\ops\cert\cassandra\dcn\dcn.keystore.jks:/bitnami/cassandra/secrets/keystore:ro
+#      - C:\Users\vorop\IdeaProjects\mltrader\ops\cert\cert\truststore\ca.truststore.pkcs12:/bitnami/cassandra/secrets/truststore:ro
