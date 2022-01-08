@@ -31,10 +31,6 @@ object ConnectedDao {
 
   trait RequestDaoConnected[F[_]] {
 
-
-
-
-
     // ---------------------------------------------------------------
     // Data
     // ---------------------------------------------------------------
@@ -42,43 +38,39 @@ object ConnectedDao {
     def getDataById(id: UUID): CompletionStage[Option[RequestData]]
     def create(histData: RequestData): CompletionStage[Unit]
     def changeState(
-                     histData: RequestData,
-                     newState: RequestState,
-                     error: Option[String]
-                   ): CompletionStage[Unit]
-
-
-
+      histData: RequestData,
+      newState: RequestState,
+      error: Option[String]
+    ): CompletionStage[Unit]
 
     // ---------------------------------------------------------------
     // Contract
     // ---------------------------------------------------------------
 
-
     def create(contract: RequestContract): CompletionStage[Unit]
     def getContById(id: UUID): CompletionStage[Option[RequestContract]]
 
     def getByProps(
-                    exchange: Exchange,
-                    symbol: String,
-                    secType: SecurityType,
-                    strike: Double,
-                    right: Option[String],
-                    multiplier: Option[String],
-                    currency: Option[String],
-                    localSymbol: Option[String],
-                    primaryExch: Option[Exchange],
-                    secIdType: Option[String],
-                    secId: Option[String],
-                    marketName: Option[String]
-                  ): F[Option[RequestContractByProps]]
+      exchange: Exchange,
+      symbol: String,
+      secType: SecurityType,
+      strike: Double,
+      right: Option[String],
+      multiplier: Option[String],
+      currency: Option[String],
+      localSymbol: Option[String],
+      primaryExch: Option[Exchange],
+      secIdType: Option[String],
+      secId: Option[String],
+      marketName: Option[String]
+    ): F[Option[RequestContractByProps]]
 
     def changeState(
-                     contractReq: RequestContract,
-                     newState: RequestState,
-                     rowsReceived: Option[Int],
-                     error: Option[String]
-                   ): CompletionStage[Unit]
+      contractReq: RequestContract,
+      newState: RequestState,
+      rowsReceived: Option[Int],
+      error: Option[String]
+    ): CompletionStage[Unit]
 
     def getContractReqById(id: UUID): CompletionStage[Option[RequestContract]]
 
@@ -157,6 +149,7 @@ object ConnectedDao {
         lazy val contractDao: ContractDao = mapperMeta.ContractDao()
 
         val barDaoConnected = new BarDaoConnected[F] {
+
           def write(bar: IbBar, contId: Int, size: BarSize, dataType: DataType): F[Unit] =
             liftF(barDao.create(Bar(bar, contId, dataType, size)))
 
@@ -168,7 +161,22 @@ object ConnectedDao {
         }
 
         val requestDaoConnected = new RequestDaoConnected[F] {
-          def changeState(id: UUID, state: RequestState): F[Unit] = liftF(requestDao.changeState(id, state))
+          def changeStateData(
+            histData: RequestData,
+            newState: RequestState,
+            rowsReceived: Option[Int],
+            error: Option[String]
+          ): F[Unit] = liftF(requestDao.changeStateData(histData, newState, rowsReceived, error))
+
+          def changeStateContract(
+            contractReq: RequestContract,
+            newState: RequestState,
+            error: Option[String]
+          ): F[Unit] = liftF(requestDao.changeStateContract(contractReq, newState, error))
+
+          def reqDataById(id: UUID): F[Option[RequestData]] = liftF(requestDao.getDataById(id))
+
+          def reqContById(id: UUID): F[Option[RequestContract]] = liftF(requestDao.getContractReqById(id))
 
           def getByProp(
             reqType: RequestType,
@@ -178,7 +186,7 @@ object ConnectedDao {
             startTimeMin: Instant,
             startTimeMax: Instant
           ): Stream[F, UUID] =
-            liftStream(requestDao.getIdByStartRange(reqType, contId, dataType, state, startTimeMin, startTimeMax))
+            liftStream(requestDao.getIdDataByStartRange(reqType, contId, dataType, state, startTimeMin, startTimeMax))
 
           def getById(id: UUID): F[RequestData] = liftF(requestDao.getById(id))
 

@@ -1,6 +1,6 @@
 package model.datastax.ib.feed.request
 
-import com.datastax.oss.driver.api.mapper.annotations.{ClusteringColumn, Entity, PartitionKey}
+import com.datastax.oss.driver.api.mapper.annotations.{ClusteringColumn, Computed, Entity, PartitionKey}
 import model.datastax.ib.feed.ast.{DataType, RequestState, RequestType}
 
 import java.time.Instant
@@ -13,8 +13,7 @@ case class RequestDataByProps(
   @(PartitionKey @field)(2) contId: Int,
   @(PartitionKey @field)(3) dataType: DataType,
   @(PartitionKey @field)(4) state: RequestState,
-  @ClusteringColumn startTime: Instant,
-  endTime: Instant,
-  reqId: UUID,
-  updateTime: Instant         = Instant.now()
+  @(ClusteringColumn @field) startTime: Instant,
+  reqId: Set[UUID],
+  @Computed("writetime(req_id)") updateTime: Instant
 )

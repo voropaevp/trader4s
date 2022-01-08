@@ -9,10 +9,9 @@ import model.datastax.ib.feed.ast._
 
 import java.nio.ByteBuffer
 
-case class CqlStringToAstCodec[T : ClassTag](
+case class CqlStringToAstCodec[T: ClassTag](
   encT: String => T
 ) extends TypeCodec[T] {
-
 
   override def getJavaType: GenericType[T] = GenericType.of(classTag[T].runtimeClass.asInstanceOf[Class[T]])
 
@@ -30,9 +29,15 @@ case class CqlStringToAstCodec[T : ClassTag](
 }
 
 object CqlStringToAstCodec {
+  lazy val DataTypeCodec: CqlStringToAstCodec[DataType]   = CqlStringToAstCodec(DataType.apply)
+  lazy val ReqStateCodec: CqlStringToAstCodec[RequestState]   = CqlStringToAstCodec(RequestState.apply)
+  lazy val ReqTypeCodec: CqlStringToAstCodec[RequestType] = CqlStringToAstCodec(RequestType.apply)
+
   lazy val astEncoders = Seq(
     CqlStringToAstCodec(Exchange.apply),
-    CqlStringToAstCodec(DataType.apply),
+    DataTypeCodec,
+    ReqStateCodec,
+    ReqTypeCodec,
     CqlStringToAstCodec(BarSize.apply),
     CqlStringToAstCodec(SecurityType.apply)
   )

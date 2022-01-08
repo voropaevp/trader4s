@@ -4,7 +4,6 @@ import com.datastax.oss.driver.api.mapper.MapperContext
 import com.datastax.oss.driver.api.mapper.entity.EntityHelper
 import model.datastax.ib.Utils._
 import model.datastax.ib.feed.ast.RequestState
-
 import java.util.concurrent.CompletionStage
 
 class RequestContractProvider(

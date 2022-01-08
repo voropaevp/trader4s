@@ -42,17 +42,18 @@ trait RequestDao {
     entityHelpers = Array(classOf[RequestDataByProps], classOf[RequestData], classOf[RequestStateAudit])
   )
   @StatementAttributes(consistencyLevel = "LOCAL_QUORUM")
-  def create(histData: RequestData): CompletionStage[Unit]
+  def createData(histData: RequestData): CompletionStage[Unit]
 
   @QueryProvider(
     providerClass = classOf[RequestDataProvider],
     entityHelpers = Array(classOf[RequestDataByProps], classOf[RequestData], classOf[RequestStateAudit])
   )
   @StatementAttributes(consistencyLevel = "LOCAL_QUORUM")
-  def changeState(
-    histData: RequestData,
-    newState: RequestState,
-    error: Option[String]
+  def changeStateData(
+     histData: RequestData,
+     newState: RequestState,
+     rowsReceived: Option[Int] = None,
+     error: Option[String]     = None
   ): CompletionStage[Unit]
 
   // ---------------------------------------------------------------
@@ -64,17 +65,16 @@ trait RequestDao {
     entityHelpers = Array(classOf[RequestContractByProps], classOf[RequestContract], classOf[RequestStateAudit])
   )
   @StatementAttributes(consistencyLevel = "LOCAL_QUORUM")
-  def create(contract: RequestContract): CompletionStage[Unit]
+  def createContract(contract: RequestContract): CompletionStage[Unit]
 
   @QueryProvider(
     providerClass = classOf[RequestContractProvider],
     entityHelpers = Array(classOf[RequestContractByProps], classOf[RequestContract], classOf[RequestStateAudit])
   )
   @StatementAttributes(consistencyLevel = "LOCAL_QUORUM")
-  def changeState(
+  def changeStateContract(
     contractReq: RequestContract,
     newState: RequestState,
-    rowsReceived: Option[Int],
     error: Option[String]
   ): CompletionStage[Unit]
 
