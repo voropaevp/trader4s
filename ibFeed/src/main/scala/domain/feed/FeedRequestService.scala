@@ -69,19 +69,23 @@ class FeedRequestService[F[_]: Async: Temporal: Clock](
     for {
       (nRecent, nSubs, nSame) <- EitherT.right(getLimitFor(request))
       _ <- (if (nSame > 5)
-              EitherT.left(Async[F].pure(FeedRequestService.LimitError.SameContractAndSizeLimit)).leftWiden[FeedRequestService.LimitError]
+              EitherT
+                .left(Async[F].pure(FeedRequestService.LimitError.SameContractAndSizeLimit))
+                .leftWiden[FeedRequestService.LimitError]
             else
               request match {
                 case r: RequestData =>
                   r.reqType match {
                     case RequestType.Subscription =>
                       if (nSubs > 99)
-                        EitherT.left(Sync[F].pure(FeedRequestService.LimitError.ConcurrentSubLimit))
+                        EitherT
+                          .left(Sync[F].pure(FeedRequestService.LimitError.ConcurrentSubLimit))
                           .leftWiden[FeedRequestService.LimitError]
                       else EitherT.right[FeedRequestService.LimitError](Async[F].unit)
                     case RequestType.Historic =>
                       if (nRecent > 59)
-                        EitherT.left(Sync[F].pure(FeedRequestService.LimitError.ConcurrentHistoricLimit))
+                        EitherT
+                          .left(Sync[F].pure(FeedRequestService.LimitError.ConcurrentHistoricLimit))
                           .leftWiden[FeedRequestService.LimitError]
                       else EitherT.right[FeedRequestService.LimitError](Async[F].unit)
                     case _ => EitherT.right[FeedRequestService.LimitError](Async[F].unit)
@@ -216,7 +220,9 @@ object FeedRequestService {
     case object SameContractAndSizeLimit extends LimitError
   }
 
-  def apply[F[_]: Async: Temporal: Clock: Logger: RequestDaoConnected](
+  def apply[F[_]](implicit ev: FeedRequestService[F]): FeedRequestService[F] = ev
+
+  def make[F[_]: Async: Temporal: Clock: Logger: RequestDaoConnected](
     timeout: FiniteDuration
   ): Resource[F, FeedRequestService[F]] =
     for {

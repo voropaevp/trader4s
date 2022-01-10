@@ -50,10 +50,10 @@ trait RequestDao {
   )
   @StatementAttributes(consistencyLevel = "LOCAL_QUORUM")
   def changeStateData(
-     histData: RequestData,
-     newState: RequestState,
-     rowsReceived: Option[Int] = None,
-     error: Option[String]     = None
+    histData: RequestData,
+    newState: RequestState,
+    rowsReceived: Option[Int] = None,
+    error: Option[String]     = None
   ): CompletionStage[Unit]
 
   // ---------------------------------------------------------------
@@ -80,4 +80,23 @@ trait RequestDao {
 
   @Select
   def getContractReqById(id: UUID): CompletionStage[Option[RequestContract]]
+
+  @Select
+  def getContractReqByProps(
+    symbol: String,
+    secType: SecurityType,
+    exchange: Exchange,
+    strike: Double = .0d,
+    right: Option[String],
+    multiplier: Option[String],
+    currency: Option[String],
+    localSymbol: Option[String],
+    primaryExch: Option[Exchange],
+    tradingClass: Option[String],
+    secIdType: Option[String],
+    secId: Option[String],
+    comboLegsDescription: Option[String],
+    marketName: Option[String],
+    state: RequestState = RequestState.PendingId
+  ): CompletionStage[Option[RequestContractByProps]]
 }

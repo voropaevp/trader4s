@@ -3,9 +3,7 @@ package utils.config
 import pureconfig._
 import pureconfig.generic.auto._
 import model.datastax.ib.feed.ast.{BarSize, DataType, Exchange, SecurityType}
-import model.datastax.ib.feed.response.contract.{ComboLeg, Contract, DeltaNeutralContract}
-import com.typesafe.config._
-import com.ib.client.{Contract => IbContact}
+import java.util.UUID
 import model.datastax.ib.feed.request.RequestContract
 
 import scala.concurrent.duration.FiniteDuration
@@ -16,7 +14,7 @@ object Config {
     exchange: Exchange,
     symbol: String,
     secType: SecurityType,
-    strike: Double,
+    strikeOpt: Option[Double],
     right: Option[String],
     multiplier: Option[String],
     currency: Option[String],
@@ -25,7 +23,25 @@ object Config {
     secIdType: Option[String],
     secId: Option[String],
     marketName: Option[String]
-  )
+  ) {
+    def strike: Double = strikeOpt.getOrElse(.0d)
+
+    def toContractRequest: RequestContract = RequestContract(
+      symbol      = symbol,
+      secType     = secType,
+      exchange    = exchange,
+      strike      = strikeOpt,
+      right       = right,
+      multiplier  = multiplier,
+      currency    = currency,
+      localSymbol = localSymbol,
+      primaryExch = primaryExch,
+      secIdType   = secIdType,
+      secId       = secId,
+      marketName  = marketName,
+      reqId       = UUID.randomUUID()
+    )
+  }
 
   case class WatchEntry(
     contract: ContractEntry,

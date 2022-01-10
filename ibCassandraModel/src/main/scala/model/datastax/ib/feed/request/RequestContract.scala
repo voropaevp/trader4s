@@ -1,8 +1,9 @@
 package model.datastax.ib.feed.request
-import com.datastax.oss.driver.api.mapper.annotations.{Entity, PartitionKey, Transient}
+import com.datastax.oss.driver.api.mapper.annotations.{Computed, Entity, PartitionKey, Transient}
 import com.ib.client.{Contract => IbContract}
 import model.datastax.ib.feed.ast.{Exchange, RequestState, RequestType, SecurityType}
 
+import java.time.Instant
 import java.util.UUID
 import scala.annotation.meta.field
 
@@ -32,7 +33,7 @@ case class RequestContract(
   primaryExch: Option[Exchange],
   //  The trading class name for this contractReq. Available in TWS contractReq description window as
   //  well. For example, GBL Dec '13 future's trading class is "FGBL".
-  tradingClass: Option[String],
+  tradingClass: Option[String] = None,
   //  Security's identifier when querying contractReq's details or placing orders
   //  ISIN - example:
   //       apple: US0378331005
@@ -42,13 +43,16 @@ case class RequestContract(
   //  Identifier of the security type.
   secId: Option[String],
   //  Description of the combo legs.
-  comboLegsDescription: Option[String],
+  comboLegsDescription: Option[String] = None,
   //The market name for this product.
   marketName: Option[String],
   @(PartitionKey @field)(1) reqId: UUID,
-  state: RequestState                 = RequestState.PendingId,
-  @Transient requestType: RequestType = RequestType.ContractDetails
+  state: RequestState                                         = RequestState.PendingId,
+  @Transient requestType: RequestType                         = RequestType.ContractDetails,
+  @(Computed @field)("writetime(symbol)") createTime: Instant = Instant.MIN,
+  @(Computed @field)("writetime(state)") updateTime: Instant  = Instant.MIN
 ) extends Request {
+
   @Transient def toIb: IbContract = {
     val c = new IbContract()
     c.symbol(symbol)

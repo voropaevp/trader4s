@@ -16,7 +16,7 @@ case class RequestContractByProps(
   //  The destination exchange.
   @(PartitionKey @field)(3) exchange: Exchange,
   //  The option's strike price.
-  @(PartitionKey @field)(4) strike: Option[Double],
+  @(PartitionKey @field)(4) strike: Double = .0d,
   //  Either Put or Call (i.e. Options). Valid values are P, PUT, C, CALL.
   @(PartitionKey @field)(5) right: Option[String],
   //  The instrument's multiplier (i.e. options, futures).

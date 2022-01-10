@@ -1,18 +1,21 @@
 package interpreter.ibkr.feed
 
-import cats.data.EitherT
+import cats.data.{EitherT, Kleisli}
 import cats.syntax.all._
 import cats.effect.{Async, Resource, Sync, Temporal}
 import cats.effect.kernel.Clock
 import cats.effect.std.Dispatcher
 import cats.effect.implicits._
+import cats.~>
 import domain.feed.{FeedAlgebra, FeedError, FeedRequestService, GenericError, QueuedFeedRequest}
 import interpreter.ibkr.feed.components.IbkrFeedWrapper
 import utils.config.Config.BrokerSettings
 import com.ib.client.{EClientSocket, EJavaSignal, EReader}
 import db.ConnectedDao.{ContractDaoConnected, RequestDaoConnected}
 import model.datastax.ib.feed.ast.{RequestState, RequestType}
-import model.datastax.ib.feed.request.{RequestData, RequestContract}
+import fs2._
+import model.datastax.ib.feed.request.{RequestContract, RequestData}
+import model.datastax.ib.feed.response.contract.Contract
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 import org.typelevel.log4cats.{Logger, SelfAwareStructuredLogger}
 
@@ -20,11 +23,9 @@ import scala.concurrent.ExecutionContext
 import java.time.{Duration, Instant}
 import java.time.format.DateTimeFormatter
 
-class IbFeed[F[_]: Async](
-  feedRequests: FeedRequestService[F],
+class IbFeed[F[_]: Async: FeedRequestService: RequestDaoConnected: ContractDaoConnected](
   client: EClientSocket
-)(implicit requestDao: RequestDaoConnected[F], contractDao: ContractDaoConnected[F])
-    extends FeedAlgebra[F] {
+) extends FeedAlgebra[F] {
 
   //Making identical historical data request within 15 seconds.
   //Making six or more historical data request for the same Contract, Exchange and Tick Type within two seconds.
@@ -55,10 +56,25 @@ class IbFeed[F[_]: Async](
 
   implicit def unsafeLogger[G[_]: Sync]: SelfAwareStructuredLogger[G] = Slf4jLogger.getLogger[G]
 
-  override def requestContractDetails(request: RequestContract): EitherT[F, FeedError, QueuedFeedRequest[F]] =
-    feedRequests.register(request).flatMap { fr =>
-      EitherT.right(Sync[F].delay(client.reqContractDetails(fr.id, request.toIb)) >> Sync[F].pure(fr))
-    }
+  private def ddd(initFr: QueuedFeedRequest[F]): Kleisli[F, QueuedFeedRequest[F], Unit] = for {
+    _ <- Kleisli.local(initFr)
+
+    Kleisli{ fr =>
+
+  } yield ()
+
+  override def requestContractDetails(request: RequestContract): EitherT[F, FeedError, Stream[F, Contract]] =
+  FeedRequestService[F]
+    .register(request)
+    .map(Kleisli.liftF( ))
+
+
+//      .flatTap(s => RequestDaoConnected[F].changeStateContract(request, RequestState.InQueue, None))
+//      .flatMap(s => s)
+//      .flatMap { fr =>
+//      EitherT.right(Sync[F].delay(client.reqContractDetails(fr.id, request.toIb)) >> Sync[F].pure(fr))
+//    }
+
 
   override def requestHistBarData(request: RequestData): EitherT[F, FeedError, QueuedFeedRequest[F]] = {
     request.ensuring(_.reqType == RequestType.Historic)
