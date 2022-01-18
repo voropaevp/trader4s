@@ -1,13 +1,14 @@
 package db
 
+import cats.data.OptionT
 import cats.syntax.all._
 import cats.effect.{Async, Resource}
+import cats.~>
 import fs2.{Chunk, Stream}
 import com.datastax.oss.driver.api.core.MappedAsyncPagingIterable
 import com.ib.client.{Bar => IbBar}
-
+import domain.feed.FeedException
 import utils.config.Config.ContractEntry
-
 import model.datastax.ib.feed.ast._
 import model.datastax.ib.feed.request._
 import model.datastax.ib.feed.response.contract.{Contract, ContractByProps, ContractDao}
@@ -30,17 +31,11 @@ object ConnectedDao {
   }
 
   trait RequestDaoConnected[F[_]] {
-    def changeStateData(
-      histData: RequestData,
+    def changeState(
+      id: UUID,
       newState: RequestState,
-      rowsReceived: Option[Int],
-      error: Option[String]
-    ): F[Unit]
-
-    def changeStateContract(
-      contractReq: RequestContract,
-      newState: RequestState,
-      error: Option[String]
+      rowsReceived: Option[Int] = None,
+      error: Option[FeedException]     = None
     ): F[Unit]
 
     def getReqDataById(id: UUID): F[Option[RequestData]]
@@ -165,18 +160,18 @@ object ConnectedDao {
         }
 
         val requestDaoConnected = new RequestDaoConnected[F] {
-          def changeStateData(
-            histData: RequestData,
+          def changeState(
+            id: UUID,
             newState: RequestState,
-            rowsReceived: Option[Int],
-            error: Option[String]
-          ): F[Unit] = liftF(requestDao.changeStateData(histData, newState, rowsReceived, error))
-
-          def changeStateContract(
-            contractReq: RequestContract,
-            newState: RequestState,
-            error: Option[String]
-          ): F[Unit] = liftF(requestDao.changeStateContract(contractReq, newState, error))
+            rowsReceived: Option[Int] = None,
+            error: Option[FeedException]     = None
+          ): F[Unit] =
+            OptionT(getReqDataById(id))
+              .flatMap(req => liftF(requestDao.changeStateData(req, newState, rowsReceived, error.map(_.toString))))
+              .orElse(
+                OptionT(getReqContById(id)).flatMap(req => liftF(requestDao.changeStateContract(req, newState, error)))
+              )
+              .getOrElseF(Async[F].raiseError(DbError("Changing state for missing data request")))
 
           def getReqDataById(id: UUID): F[Option[RequestData]] = liftF(requestDao.getDataById(id))
 

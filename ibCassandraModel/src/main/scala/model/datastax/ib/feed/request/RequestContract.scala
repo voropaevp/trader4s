@@ -9,6 +9,7 @@ import scala.annotation.meta.field
 
 @Entity
 case class RequestContract(
+  @(PartitionKey @field)(1) reqId: UUID,
   symbol: String,
   //The security's type: STK - stock (or ETF) OPT - option FUT - future IND - index FOP -
   // futures option CASH - forex pair BAG - combo WAR - warrant BOND- bond CMDTY- commodity
@@ -46,12 +47,31 @@ case class RequestContract(
   comboLegsDescription: Option[String] = None,
   //The market name for this product.
   marketName: Option[String],
-  @(PartitionKey @field)(1) reqId: UUID,
   state: RequestState                                         = RequestState.PendingId,
-  @Transient requestType: RequestType                         = RequestType.ContractDetails,
   @(Computed @field)("writetime(symbol)") createTime: Instant = Instant.MIN,
   @(Computed @field)("writetime(state)") updateTime: Instant  = Instant.MIN
 ) extends Request {
+
+  @Transient val requestType: RequestType = RequestType.ContractDetails
+
+  @Transient def toProps: RequestContractByProps = RequestContractByProps(
+    symbol               = this.symbol,
+    secType              = this.secType,
+    exchange             = this.exchange,
+    strike               = this.strike.getOrElse(.0d),
+    right                = this.right,
+    multiplier           = this.multiplier,
+    currency             = this.currency,
+    localSymbol          = this.localSymbol,
+    primaryExch          = this.primaryExch,
+    tradingClass         = this.tradingClass,
+    secIdType            = this.secIdType,
+    secId                = this.secId,
+    comboLegsDescription = this.comboLegsDescription,
+    marketName           = this.marketName,
+    state                = this.state,
+    reqId                = this.reqId
+  )
 
   @Transient def toIb: IbContract = {
     val c = new IbContract()

@@ -4,6 +4,7 @@ import model.datastax.ib.feed.ast.RequestType
 
 import java.util.UUID
 
-trait Request {
-  def reqId: UUID
+trait Request extends Product with Serializable {
+  val reqId: UUID
+  val requestType: RequestType
 }

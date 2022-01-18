@@ -10,6 +10,13 @@ import scala.concurrent.duration.FiniteDuration
 
 object Config {
 
+  case class Limits(
+    concurrentSubLimit: Int,
+    concurrentHistoricLimit: Int,
+    sameContractAndSizeLimit: Int,
+    waitQueueSize: Int
+  )
+
   case class ContractEntry(
     exchange: Exchange,
     symbol: String,

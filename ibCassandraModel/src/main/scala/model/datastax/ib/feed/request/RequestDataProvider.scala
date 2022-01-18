@@ -7,7 +7,6 @@ import model.datastax.ib.feed.ast.RequestState
 import model.datastax.ib.feed.codec.CqlStringToAstCodec.{DataTypeCodec, ReqStateCodec, ReqTypeCodec}
 
 import java.util
-import java.util.HashSet
 import java.util.UUID
 import java.util.concurrent.CompletionStage
 
@@ -31,14 +30,14 @@ class RequestDataProvider(
   private val preparedReqHistDataById         = prepareInsert(session, reqHistDataByIdHelper)
   private val preparedInsertState             = prepareInsert(session, reqStateAuditByIdHelper)
 
-  def changeState(
+  def changeStateData(
     histData: RequestData,
     newState: RequestState,
     rowsReceived: Option[Int] = None,
     error: Option[String]     = None
   ): CompletionStage[Unit] = batch(
     Seq(
-      bind(preparedDeleteReqHistDataByProp, histData, reqHistDataHelperByProp),
+      bind(preparedDeleteReqHistDataByProp, histData.toProps, reqHistDataHelperByProp),
       bind(preparedReqHistDataById, histData.copy(state = newState), reqHistDataByIdHelper),
       preparedReqHistDataByProp
         .bind()
@@ -47,7 +46,7 @@ class RequestDataProvider(
           s.add(histData.reqId)
           s
         }, classOf[UUID])
-        .set(1, histData.reqType, ReqTypeCodec)
+        .set(1, histData.requestType, ReqTypeCodec)
         .setInt(2, histData.contId)
         .set(3, histData.dataType, DataTypeCodec)
         .set(4, histData.state, ReqStateCodec)
@@ -66,12 +65,12 @@ class RequestDataProvider(
     session
   )
 
-  def create(histData: RequestData): CompletionStage[Unit] = batch(
+  def createData(histData: RequestData): CompletionStage[Unit] = batch(
     Seq(
       preparedReqHistDataByProp
         .bind()
         .setUuid(0, histData.reqId)
-        .set(1, histData.reqType, ReqTypeCodec)
+        .set(1, histData.requestType, ReqTypeCodec)
         .setInt(2, histData.contId)
         .set(3, histData.dataType, DataTypeCodec)
         .set(4, histData.state, ReqStateCodec)

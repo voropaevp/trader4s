@@ -45,6 +45,6 @@ case class RequestContractByProps(
   @(PartitionKey @field)(13) comboLegsDescription: Option[String],
   //The market name for this product.
   @(PartitionKey @field)(14) marketName: Option[String],
-  @(PartitionKey @field)(15) state: RequestState = RequestState.PendingId,
+  @(PartitionKey @field)(15) state: RequestState,
   reqId: UUID
 )

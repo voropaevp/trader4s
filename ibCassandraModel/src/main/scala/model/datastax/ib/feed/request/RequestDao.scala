@@ -18,7 +18,7 @@ trait RequestDao {
   @Query("""SELECT
           req_id
            ${keyspaceId}.request_data_by_props
-        reqType = :reqType
+        requestType = :requestType
         AND contId = :contId
         AND dataType = :dataType
         AND contId = :contId
@@ -26,7 +26,7 @@ trait RequestDao {
         AND startTime < startTimeMax
         """)
   def getIdDataByStartRange(
-    @CqlName("reqType") reqType: RequestType,
+    @CqlName("requestType") reqType: RequestType,
     @CqlName("contId") contId: Int,
     @CqlName("dataType") dataType: DataType,
     @CqlName("state") state: RequestState,
@@ -73,9 +73,9 @@ trait RequestDao {
   )
   @StatementAttributes(consistencyLevel = "LOCAL_QUORUM")
   def changeStateContract(
-    contractReq: RequestContract,
+    id: RequestContract,
     newState: RequestState,
-    error: Option[String]
+    error: Option[String] = None
   ): CompletionStage[Unit]
 
   @Select

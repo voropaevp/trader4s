@@ -15,5 +15,5 @@ case class RequestDataByProps(
   @(PartitionKey @field)(4) state: RequestState,
   @(ClusteringColumn @field) startTime: Instant,
   reqId: Set[UUID],
-  @Computed("writetime(req_id)") updateTime: Instant
+  @(Computed @field)("writetime(req_id)") updateTime: Instant = Instant.MIN
 )

@@ -3,13 +3,14 @@ package interpreter.ibkr.feed.components
 import cats.effect.{Async, Resource, Sync}
 import com.ib.client._
 import com.typesafe.scalalogging.LazyLogging
-import model.datastax.ib.feed.response.data.{Bar          => MBar}
+import domain.feed.FeedException.IbError
+import model.datastax.ib.feed.response.data.{Bar => MBar}
 import model.datastax.ib.feed.response.contract.{Contract => MContact}
 
 import java.{lang, util}
 import scala.jdk.CollectionConverters._
-import domain.feed.{GenericError, FeedRequestService}
-import model.datastax.ib.feed.request.{RequestData, RequestContract}
+import domain.feed.{FeedRequestService, GenericError}
+import model.datastax.ib.feed.request.{RequestContract, RequestData}
 
 class IbkrFeedWrapper[F[_]: Async](feedRequests: FeedRequestService[F]) extends EWrapper with LazyLogging {
 
@@ -103,7 +104,7 @@ class IbkrFeedWrapper[F[_]: Async](feedRequests: FeedRequestService[F]) extends 
     feedRequests.enqueue(
       i, {
         case _: RequestContract => Right(MContact(contractDetails))
-        case x @ _                 => Left(GenericError(s"Bars returned as a ${x.getClass}, must be RequestContract"))
+        case x @ _                 => Left(IbError(s"Bars returned as a ${x.getClass}, must be RequestContract"))
       }
     )
   }
@@ -142,7 +143,7 @@ class IbkrFeedWrapper[F[_]: Async](feedRequests: FeedRequestService[F]) extends 
     feedRequests.enqueue(
       i, {
         case r: RequestData => Right(MBar(bar, r.contId, r.dataType, r.size))
-        case x @ _          => Left(GenericError(s"Bars returned as a ${x.getClass}, must be RequestData"))
+        case x @ _          => Left(IbError(s"Bars returned as a ${x.getClass}, must be RequestData"))
       }
     )
   }
@@ -236,21 +237,21 @@ class IbkrFeedWrapper[F[_]: Async](feedRequests: FeedRequestService[F]) extends 
       // probably a bug
       case e: NullPointerException =>
         logger.warn(s"Got NullPointerException [ $e ] from client api. Does not cause any issue during startup")
-      case _ => feedRequests.sendError(GenericError("self API error", cause = e))
+      case _ => feedRequests.sendError(IbError("self API error", cause = e))
     }
 
-  override def error(s: String): Unit = feedRequests.sendError(GenericError(s))
+  override def error(s: String): Unit = feedRequests.sendError(IbError(s))
 
   override def error(i: Int, code: Int, s: String): Unit = i match {
     case -1 =>
       code match {
-        case x if List(502, 504).contains(x) => feedRequests.sendError(GenericError(s"[$code] [$s]"))
+        case x if List(502, 504).contains(x) => feedRequests.sendError(IbError(s"[$code] [$s]"))
         case _                               => logger.warn(s"Notification with error code [$code] [$s]")
       }
-    case _ => feedRequests.fail(i, GenericError(s"[$code] [$s]"))
+    case _ => feedRequests.fail(i, IbError(s"[$code] [$s]"))
   }
 
-  override def connectionClosed(): Unit = feedRequests.sendError(GenericError("Connection to IBKR gateway shutdown"))
+  override def connectionClosed(): Unit = feedRequests.sendError(IbError("Connection to IBKR gateway shutdown"))
 
   override def connectAck(): Unit = logger.info(s"Connection to IBKR gateway acknowledged")
 

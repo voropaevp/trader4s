@@ -19,16 +19,16 @@ class RequestContractProvider(
   private val preparedContractById         = prepareInsert(session, reqContractHelper)
   private val preparedInsertState          = prepareInsert(session, reqStateAuditByIdHelper)
 
-  def changeState(
+  def changeStateContract(
     contractReq: RequestContract,
     newState: RequestState,
     error: Option[String]
   ): CompletionStage[Unit] =
     batch(
       Seq(
-        bind(preparedDeleteContractByProp, contractReq, reqContractHelperByProps),
+        bind(preparedDeleteContractByProp, contractReq.toProps, reqContractHelperByProps),
         bind(preparedContractById, contractReq.copy(state   = newState), reqContractHelper),
-        bind(preparedContractByProp, contractReq.copy(state = newState), reqContractHelperByProps),
+        bind(preparedContractByProp, contractReq.copy(state = newState).toProps, reqContractHelperByProps),
         bind(
           preparedInsertState,
           RequestStateAudit(
@@ -42,7 +42,7 @@ class RequestContractProvider(
       session
     )
 
-  def create(contract: RequestContract): CompletionStage[Unit] = batch(
+  def createContract(contract: RequestContract): CompletionStage[Unit] = batch(
     Seq(
       bind(
         preparedContractByProp,
@@ -50,7 +50,7 @@ class RequestContractProvider(
           symbol               = contract.symbol,
           secType              = contract.secType,
           exchange             = contract.exchange,
-          strike               = contract.strike,
+          strike               = contract.strike.getOrElse(.0D),
           right                = contract.right,
           multiplier           = contract.multiplier,
           currency             = contract.currency,
