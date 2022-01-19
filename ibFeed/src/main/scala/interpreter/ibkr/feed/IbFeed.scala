@@ -53,8 +53,8 @@ class IbFeed[F[_]: Async: FeedRequestService: RequestDaoConnected: ContractDaoCo
 
   def retry
 
-  override def requestContractDetails(request: RequestContract): EitherT[F, FeedException, Stream[F, Contract]] =
-    FeedRequestService[F].register(request).map(_.stream.map(_.asInstanceOf[Contract]))
+  override def requestContractDetails(request: RequestContract): EitherT[F, FeedException, QueuedFeedRequest[F]] =
+    FeedRequestService[F].register(request)
 
   override def requestHistBarData(request: RequestData): EitherT[F, FeedException, Stream[F, Bar]] =
     EitherT[F, FeedException, RequestData](

@@ -133,4 +133,4 @@ lazy val ibFeed = project
   )
   .dependsOn(ibCassandraModel)
 
-lazy val root = project.in(file(".")).aggregate(ibCassandraModel, ibFeed)
+lazy val trader4s = project.in(file(".")).aggregate(ibCassandraModel, ibFeed)

@@ -15,36 +15,28 @@ import fs2._
 import model.datastax.ib.feed.ast.RequestState
 
 object ContractFetchStrategy {
-  def run[F[_]: Async: ContractDaoConnected: RequestDaoConnected: FeedAlgebra](
+  def run[F[_]: Async: ContractDaoConnected: RequestDaoConnected: FeedAlgebra: Logger](
     entries: List[ContractEntry]
   ): F[List[Either[FeedException, Stream[F, Contract]]]] = {
     val s = Stream
       .emits(entries)
-      .parEvalMap[F, Option[Contract]](10)(tryGetContract[F])
-
-    s
-      .zip(Stream.emits(entries))
-      .flatMap{
-        case (maybeContract, entry) => maybeContract match {
-          case Some(contract) => Stream.emit(contract.some)
-          case None => Stream
-            .eval(makeFeedRequest[F](entry).value.flatMap {
-              case Left(ex) => ex match {
-                case DbError(message, cause) =>
-                case FeedException.IbError(message, cause) =>
-                case _: FeedRequestService.LimitError =>
-                case FeedException.RequestTypeException(message) =>
-                case _ =>
-              }
-              case Right(value) =>
-
-            })
-            .flatMap {
-              case Some(st) => st
-              case None => Stream.empty[F, Contract]
-            }
+      .mapAsync[F, (ContractEntry, Option[Contract])](10)(s => tryGetContract[F](s).map((s,_)))
+      .flatMap {
+        case (entry, maybeContract) => maybeContract match {
+          case Some(contract) => Stream.emit(contract)
+          case None => Stream.eval(makeFeedRequest[F](entry).value)
+                    .flatMap {
+                      case Left(ex) => ex match {
+                        case DbError(message, cause) =>
+                          Logger[F].error(message) *>
+                          Async[F].delay(cause.printStackTrace())
+                          Stream.emit(None)
+                        case FeedException.IbError(message, cause) =>
+                        case FeedException.RequestTypeException(message) =>
+                        case _ => Stream.raiseError(ex)
+                      }
+                      case Right(contractStream) => contractStream
         }
-        case _ => Stream.empty[F, Contract]
       }
   }
 

@@ -4,11 +4,10 @@ import cats.data.EitherT
 import cats.syntax.all._
 import cats.effect.syntax.all._
 import cats.effect.{Async, Clock, Deferred, Ref, Resource, Sync, Temporal}
-import cats.effect.std.{Dispatcher, Queue}
+import cats.effect.std.Dispatcher
 import db.ConnectedDao._
 import domain.feed.FeedException.IbError
-import domain.feed.FeedRequestService.LimitError
-import model.datastax.ib.feed.ast.{BarSize, DataType, RequestState, RequestType}
+import model.datastax.ib.feed.ast.RequestState
 import org.typelevel.log4cats.{Logger, SelfAwareStructuredLogger}
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 
@@ -16,6 +15,7 @@ import scala.concurrent.duration._
 import scala.collection.immutable.SortedMap
 import model.datastax.ib.feed.request.{Request, RequestContract, RequestData}
 import model.datastax.ib.feed.response.Response
+import utils.config.Config
 
 import scala.concurrent.duration.FiniteDuration
 
@@ -27,69 +27,15 @@ class FeedRequestService[F[_]: Async: Temporal: Clock: Logger](
   criticalError: Deferred[F, IbError]
 )(implicit reqDao: RequestDaoConnected[F]) {
 
-  //Max of 100 active subscriptions.
-  //Making identical historical data request within 15 seconds.
-  //Making six or more historical data request for the same Contract, Exchange and Tick Type within two seconds.
-  //Making more than 60 request within any ten minute period.
-  //Note that when BID_ASK historical data is requested, each request is counted twice.
-
   implicit def unsafeLogger[G[_]: Sync]: SelfAwareStructuredLogger[G] = Slf4jLogger.getLogger[G]
 
   def stoppedByError: F[Boolean] = criticalError.tryGet.map(_.nonEmpty)
-
-  def expireReqByTime: F[Unit] =
-    for {
-      now <- Clock[F].realTime
-      _   <- recentReqTime.update(_.view.filter(_ < now - 10.minutes).toSet)
-    } yield ()
-
-  private def acquire(request: Request): F[(Int, Int, Int)] =
-    for {
-      now     <- Clock[F].realTime
-      nRecent <- recentReqTime.get.map(_.size)
-      nSubs   <- concurrentSubs.get
-      nSame <- request match {
-        case r: RequestData =>
-          reqByContSize
-            .updateAndGet(_.updatedWith((r.contId, r.size)) {
-              case Some(value) =>
-                val newSet = value.filter(_ < now - 2.seconds)
-                if (newSet.nonEmpty)
-                  Some(newSet)
-                else
-                  None
-              case None => None
-            })
-            .map(_.getOrElse((r.contId, r.size), Set()).size)
-        case _ => Sync[F].pure(0)
-      }
-    } yield (nRecent, nSubs, nSame)
-
 
   def sendError(ex: IbError): Unit = dispatcher.unsafeRunAndForget(
     Logger[F].error(s"${ex.getMessage}  ${ex.printStackTrace()}") >> criticalError.complete(ex) >> failAll(ex)
   )
 
-  def retryRegister(request: Request): F[Either[FeedException, QueuedFeedRequest[F]]] =
-    request match {
-      case req: RequestContract => reqDao.createContract(req)
-      case req: RequestData     => reqDao.createData(req)
-    }
-
-    register(request).value.flatMap {
-      case Left(err) =>
-        err match {
-          case _: LimitError => Temporal[F].sleep(10.seconds) >> retryRegister(request)
-        }
-      case Right(value) => Either.right[FeedException, QueuedFeedRequest[F]](value).pure[F]
-    }
-
-
-  def register(request: Request): EitherT[F, FeedException, QueuedFeedRequest[F]] = {
-    checkLimits(request).flatMap {
-      case Left(_) =>  Temporal[F].sleep(10.seconds) >> checkLimits(request)
-      case Right(r) => r.pure
-    }
+  def register(request: Request): EitherT[F, FeedException, QueuedFeedRequest[F]] =
     for {
       _ <- EitherT
         .fromOptionF(criticalError.tryGet, ())
@@ -101,33 +47,14 @@ class FeedRequestService[F[_]: Async: Temporal: Clock: Logger](
           case req: RequestData     => reqDao.createData(req)
         }
       )
-      _ <- EitherT(checkLimits(request))
       req <- EitherT.right(for {
+        _    <- limits.acquire(request)
         id   <- queuedReq.get.map(c => if (c.isEmpty) 1 else c.lastKey + 1)
         _    <- Logger[F].debug(s"Request id [$id] assigned for [$request]")
         reqF <- QueuedFeedRequest(id, request)
         _    <- queuedReq.update(_ + (id -> reqF))
-        now  <- Clock[F].realTime
-        _    <- recentReqTime.update(_ + now)
-        _ <- request match {
-          case req: RequestData =>
-            if (req.requestType == RequestType.Historic)
-              reqByContSize.update(_.updatedWith(req.contId, req.size) {
-                case Some(value) =>
-                  if (req.dataType == DataType.BidAsk)
-                    Some((value + now) + (now + 1.seconds))
-                  else
-                    Some(value + now)
-                case None => Some(Set(now))
-              })
-            else if (req.dataType == DataType.BidAsk)
-              concurrentSubs.update(_ + 2)
-            else
-              concurrentSubs.update(_ + 1)
-        }
       } yield reqF)
     } yield req
-  }
 
   def getAll: F[SortedMap[Int, QueuedFeedRequest[F]]] = queuedReq.get
 
@@ -156,25 +83,14 @@ class FeedRequestService[F[_]: Async: Temporal: Clock: Logger](
       .get
       .flatMap(_.get(id) match {
         case Some(req) =>
-          (req.request match {
-            case r: RequestData =>
-              if (r.requestType == RequestType.Subscription)
-                if (r.dataType == DataType.BidAsk)
-                  concurrentSubs.update(_ - 2)
-                else
-                  concurrentSubs.update(_ - 1)
-              else
-                Sync[F].unit
-            case _ => Sync[F].unit
-          }) *>
-            req
-              .rowsReceived
-              .get
-              .map(_.some)
-              .flatMap(reqDao.changeState(req.request.reqId, RequestState.Failed, _, ex.some)) *>
-            queuedReq.update(_.removed(id)) *>
-            startedReceive.update(_ - id) *>
-            req.fail(ex)
+          for {
+            rows <- req.rowsReceived.get.map(_.some)
+            _    <- reqDao.changeState(req.request.reqId, RequestState.Failed, rows, ex.some)
+            _    <- limits.release(req.request)
+            _    <- queuedReq.update(_.removed(id))
+            _    <- startedReceive.update(_ - id)
+            _    <- req.fail(ex)
+          } yield ()
         case None => criticalError.complete(IbError(s"Rogue request Id [$id] failed")).as(())
       })
 
@@ -191,23 +107,14 @@ class FeedRequestService[F[_]: Async: Temporal: Clock: Logger](
       .get
       .flatMap(_.get(id) match {
         case Some(req) =>
-          (
-            req.request match {
-              case r: RequestData =>
-                if (r.requestType == RequestType.Subscription)
-                  concurrentSubs.update(_ - 1)
-                else
-                  Sync[F].unit
-              case _ => Sync[F].unit
-            }
-          ) *> req
-            .rowsReceived
-            .get
-            .map(_.some)
-            .flatMap(reqDao.changeState(req.request.reqId, RequestState.Complete, _)) *>
-            queuedReq.update(_.removed(id)) *>
-            startedReceive.update(_ - id) *>
-            req.close()
+          for {
+            rows <- req.rowsReceived.get.map(_.some)
+            _    <- reqDao.changeState(req.request.reqId, RequestState.Failed, rows)
+            _    <- limits.release(req.request)
+            _    <- queuedReq.update(_.removed(id))
+            _    <- startedReceive.update(_ - id)
+            _    <- req.close()
+          } yield ()
         case None => criticalError.complete(IbError(s"Rogue request Id [$id] ended")).as(())
       })
   }
@@ -218,26 +125,23 @@ object FeedRequestService {
   def apply[F[_]](implicit ev: FeedRequestService[F]): FeedRequestService[F] = ev
 
   def make[F[_]: Async: Temporal: Clock: Logger: RequestDaoConnected](
-    timeout: FiniteDuration
+    timeout: FiniteDuration,
+    config: Config.Limits
   ): Resource[F, FeedRequestService[F]] =
     for {
-      dsp <- Dispatcher[F]
+      dsp    <- Dispatcher[F]
+      limits <- Limits.make[F](config)
       frs <- Resource.make(
         for {
-          queuedReq      <- Ref[F].of(SortedMap.empty[Int, QueuedFeedRequest[F]])
-          recentReqTime  <- Ref[F].of(Set.empty[FiniteDuration])
-          reqByContSize  <- Ref[F].of(Map.empty[(Int, BarSize), Set[FiniteDuration]])
-          concurrentSubs <- Ref[F].of(0)
-          startReceive   <- Ref[F].of(Set.empty[Int])
-          errorChannel   <- Deferred[F, IbError]
+          queuedReq     <- Ref[F].of(SortedMap.empty[Int, QueuedFeedRequest[F]])
+          startReceive  <- Ref[F].of(Set.empty[Int])
+          criticalError <- Deferred[F, IbError]
         } yield new FeedRequestService(
-          queuedReq,
-          recentReqTime,
-          reqByContSize,
-          concurrentSubs,
-          startReceive,
-          dsp,
-          errorChannel
+          queuedReq      = queuedReq,
+          limits         = limits,
+          startedReceive = startReceive,
+          dispatcher     = dsp,
+          criticalError  = criticalError
         )
       )(frs =>
         for {
@@ -262,7 +166,6 @@ object FeedRequestService {
               }
             } yield ()
           )
-        _ <- frs.expireReqByTime
       } yield ()
       _ <- housekeeping.foreverM.background.void
     } yield frs

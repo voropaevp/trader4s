@@ -26,7 +26,6 @@ sealed case class QueuedFeedRequest[F[_]: Logger: Clock: Sync](
   updateTime: Ref[F, FiniteDuration],
   createTime: FiniteDuration
 ) {
-
   def close(): F[Unit] =
     for {
       _ <- outcome.complete(RequestSuccess)

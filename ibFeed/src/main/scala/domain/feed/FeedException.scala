@@ -1,6 +1,6 @@
 package domain.feed
 
-trait FeedException {
+trait FeedException extends Throwable {
   def message: String
 }
 

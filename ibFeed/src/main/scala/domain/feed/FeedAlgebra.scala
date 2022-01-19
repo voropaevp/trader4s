@@ -7,11 +7,11 @@ import model.datastax.ib.feed.response.contract.Contract
 import model.datastax.ib.feed.response.data.Bar
 
 trait FeedAlgebra[F[_]] {
-  def requestHistBarData(request: RequestData): EitherT[F, FeedException, Stream[F, Bar]]
+  def requestHistBarData(request: RequestData): EitherT[F, FeedException,  QueuedFeedRequest[F]]
 
-  def subscribeBarData(request: RequestData): EitherT[F, FeedException, Stream[F, Bar]]
+  def subscribeBarData(request: RequestData): EitherT[F, FeedException,  QueuedFeedRequest[F]]
 
-  def requestContractDetails(request: RequestContract): EitherT[F, FeedException, Stream[F, Contract]]
+  def requestContractDetails(request: RequestContract): EitherT[F, FeedException, QueuedFeedRequest[F]]
 }
 
 object FeedAlgebra {
