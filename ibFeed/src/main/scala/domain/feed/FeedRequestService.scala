@@ -21,9 +21,7 @@ import scala.concurrent.duration.FiniteDuration
 
 class FeedRequestService[F[_]: Async: Temporal: Clock: Logger](
   queuedReq: Ref[F, SortedMap[Int, QueuedFeedRequest[F]]],
-  recentReqTime: Ref[F, Set[FiniteDuration]],
-  reqByContSize: Ref[F, Map[(Int, BarSize), Set[FiniteDuration]]],
-  concurrentSubs: Ref[F, Int],
+  limits: Limits[F],
   startedReceive: Ref[F, Set[Int]],
   dispatcher: Dispatcher[F],
   criticalError: Deferred[F, IbError]
@@ -216,22 +214,6 @@ class FeedRequestService[F[_]: Async: Temporal: Clock: Logger](
 }
 
 object FeedRequestService {
-
-  sealed trait LimitError extends Exception with FeedException
-
-  object LimitError {
-    case class ConcurrentSubLimit(limit: Int) extends LimitError {
-      override def message: String = s"subscription limit $limit reached"
-    }
-
-    case class ConcurrentHistoricLimit(limit: Int) extends LimitError {
-      override def message: String = s"historic data request limit $limit reached"
-    }
-
-    case class SameContractAndSizeLimit(limit: Int) extends LimitError {
-      override def message: String = s"same contract and size violation limit $limit reached"
-    }
-  }
 
   def apply[F[_]](implicit ev: FeedRequestService[F]): FeedRequestService[F] = ev
 
