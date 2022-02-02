@@ -52,7 +52,7 @@ trait RequestDao {
   def changeStateData(
     histData: RequestData,
     newState: RequestState,
-    rowsReceived: Option[Int] = None,
+    rowsReceived: Option[Long] = None,
     error: Option[String]     = None
   ): CompletionStage[Unit]
 

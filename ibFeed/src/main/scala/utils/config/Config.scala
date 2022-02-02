@@ -11,10 +11,10 @@ import scala.concurrent.duration.FiniteDuration
 object Config {
 
   case class Limits(
-                     concurrentSubLimit: Int,
-                     hist10MinLimit: Int,
-                     sameContractAndSizeLimit: Int,
-                     waitQueueSize: Int
+    concurrentSubLimit: Int,
+    hist10MinLimit: Int,
+    sameContractAndSizeLimit: Int,
+    waitQueueSize: Int
   )
 
   case class ContractEntry(
@@ -63,7 +63,7 @@ object Config {
 
   case class BrokerSettings(ip: String, port: Int, requestTimeout: FiniteDuration, clientId: Int)
 
-  case class AppSettings(broker: BrokerSettings, watchList: List[WatchEntry])
+  case class AppSettings(broker: BrokerSettings, limits: Limits, watchList: List[WatchEntry])
 
   ConfigSource.default.load[AppSettings]
 }

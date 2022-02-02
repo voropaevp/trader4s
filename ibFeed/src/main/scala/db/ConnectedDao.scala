@@ -3,10 +3,8 @@ package db
 import cats.data.OptionT
 import cats.syntax.all._
 import cats.effect.{Async, Resource}
-import cats.~>
 import fs2.{Chunk, Stream}
 import com.datastax.oss.driver.api.core.MappedAsyncPagingIterable
-import com.ib.client.{Bar => IbBar}
 import domain.feed.FeedException
 import utils.config.Config.ContractEntry
 import model.datastax.ib.feed.ast._
@@ -23,7 +21,7 @@ import scala.jdk.CollectionConverters._
 object ConnectedDao {
 
   trait BarDaoConnected[F[_]] {
-    def write(bar: IbBar, contId: Int, size: BarSize, dataType: DataType): F[Unit]
+    def write(bar: Bar): F[Unit]
 
     def headTs(contId: Int, size: BarSize, dataType: DataType): F[Instant]
 
@@ -34,7 +32,7 @@ object ConnectedDao {
     def changeState(
       id: UUID,
       newState: RequestState,
-      rowsReceived: Option[Int] = None,
+      rowsReceived: Option[Long] = None,
       error: Option[FeedException]     = None
     ): F[Unit]
 
@@ -69,9 +67,11 @@ object ConnectedDao {
       state: RequestState = RequestState.PendingId
     ): F[Option[RequestContractByProps]]
 
-    def createContract(contReq: RequestContract): F[Unit]
+    def create(req: Request): F[Unit]
 
-    def createData(dataReq: RequestData): F[Unit]
+//    def createContract(contReq: RequestContract): F[Unit]
+//
+//    def createData(dataReq: RequestData): F[Unit]
   }
 
   trait ContractDaoConnected[F[_]] {
@@ -149,8 +149,7 @@ object ConnectedDao {
 
         val barDaoConnected = new BarDaoConnected[F] {
 
-          def write(bar: IbBar, contId: Int, size: BarSize, dataType: DataType): F[Unit] =
-            liftF(barDao.create(Bar(bar, contId, dataType, size)))
+          def write(bar: Bar): F[Unit] = liftF(barDao.create(bar))
 
           def headTs(contId: Int, size: BarSize, dataType: DataType): F[Instant] =
             liftF(barDao.headTs(contId, size, dataType))
@@ -163,7 +162,7 @@ object ConnectedDao {
           def changeState(
             id: UUID,
             newState: RequestState,
-            rowsReceived: Option[Int] = None,
+            rowsReceived: Option[Long] = None,
             error: Option[FeedException]     = None
           ): F[Unit] =
             OptionT(getReqDataById(id))
@@ -223,9 +222,11 @@ object ConnectedDao {
             )
           )
 
-          def createContract(contReq: RequestContract): F[Unit] = liftF(requestDao.createContract(contReq))
-
-          def createData(dataReq: RequestData): F[Unit] = liftF(requestDao.createData(dataReq))
+          def create(req: Request): F[Unit] = req match {
+            case r: RequestContract =>liftF(requestDao.createContract(r))
+            case r: RequestData =>liftF(requestDao.createData(r))
+            case _ => ().pure[F]
+          }
         }
 
         val contractDaoConnected = new ContractDaoConnected[F] {

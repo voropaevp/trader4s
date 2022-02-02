@@ -12,6 +12,6 @@ case class RequestStateAudit(
   @(PartitionKey @field) reqId: UUID,
   @(ClusteringColumn @field) createTime: Instant = Instant.now(),
   state: RequestState,
-  rowsReceived: Option[Int] = None,
+  rowsReceived: Option[Long] = None,
   error: Option[String] = None
 )

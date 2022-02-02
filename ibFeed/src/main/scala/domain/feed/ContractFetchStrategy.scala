@@ -12,6 +12,7 @@ import model.datastax.ib.feed.request.RequestContract
 import model.datastax.ib.feed.response.contract.Contract
 import utils.config.Config.ContractEntry
 import fs2._
+import fs2.concurrent.SignallingRef
 import model.datastax.ib.feed.ast.RequestState
 
 object ContractFetchStrategy {
@@ -20,6 +21,7 @@ object ContractFetchStrategy {
   ): F[List[Either[FeedException, Stream[F, Contract]]]] = {
     val s = Stream
       .emits(entries)
+      .pauseWhen(disconnected)
       .mapAsync[F, (ContractEntry, Option[Contract])](10)(s => tryGetContract[F](s).map((s,_)))
       .flatMap {
         case (entry, maybeContract) => maybeContract match {
@@ -28,10 +30,17 @@ object ContractFetchStrategy {
                     .flatMap {
                       case Left(ex) => ex match {
                         case DbError(message, cause) =>
-                          Logger[F].error(message) *>
-                          Async[F].delay(cause.printStackTrace())
-                          Stream.emit(None)
-                        case FeedException.IbError(message, cause) =>
+                          Stream.emit(
+                            Logger[F].error(message) *>
+                            Async[F].delay(cause.printStackTrace())
+                            .as(None)
+                          )
+
+                        case FeedException.IbReqError(code, _, _) => code match {
+                          case 1100 =>  Stream.emit(disconnected.set(false).as(None))
+                          case
+                        }
+                      }
                         case FeedException.RequestTypeException(message) =>
                         case _ => Stream.raiseError(ex)
                       }
@@ -86,7 +95,7 @@ object ContractFetchStrategy {
       .flatMap {
         case Left(err) => err match {
           case DbError(message, cause) =>
-          case FeedException.IbError(message, cause) =>
+          case FeedException.IbReqError(message, cause) =>
           case error: FeedRequestService.LimitError =>
           case FeedException.RequestTypeException(message) =>
           case _ =>

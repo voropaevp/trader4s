@@ -15,6 +15,7 @@ object RequestState {
     case "complete"              => Complete
     case "failed"                => Failed
     case "no_data"               => NoData
+    case "cancelled"             => Cancelled
     case _                       => Unknown
   }
 
@@ -48,6 +49,10 @@ object RequestState {
 
   case object Failed extends RequestState {
     override def toString: String = "failed"
+  }
+
+  case object Cancelled extends RequestState {
+    override def toString: String = "cancelled"
   }
 
   case object NoData extends RequestState {
