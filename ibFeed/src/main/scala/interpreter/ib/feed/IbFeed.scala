@@ -1,13 +1,13 @@
-package interpreter.ibkr.feed
+package interpreter.ib.feed
 
 import fs2._
 import cats.syntax.all._
 import cats.effect.syntax.all._
 import cats.effect.{Async, Resource, Sync, Temporal}
 import cats.effect.kernel.Clock
-import interpreter.ibkr.feed.components.IbkrFeedWrapper
+import interpreter.ib.feed.components.IbFeedWrapper
 import domain.feed.{FeedAlgebra, FeedRequestService}
-import utils.config.Config.AppSettings
+import config.AppSettings
 import com.ib.client.{EClientSocket, EJavaSignal, EReader}
 import db.ConnectedDao.{BarDaoConnected, ContractDaoConnected, RequestDaoConnected}
 import domain.feed.FeedException._
@@ -49,18 +49,18 @@ class IbFeed[F[_]: Async: FeedRequestService: RequestDaoConnected: ContractDaoCo
 }
 
 object IbFeed {
-  implicit def unsafeLogger[G[_]: Sync]: SelfAwareStructuredLogger[G] = Slf4jLogger.getLogger[G]
+  implicit def unsafeLogger[F[_]: Sync]: SelfAwareStructuredLogger[F] = Slf4jLogger.getLogger[F]
 
-  def apply[F[_]: Async: Clock: Temporal: RequestDaoConnected: ContractDaoConnected: BarDaoConnected: Logger](
+  def apply[F[_]: Async: Clock: Temporal: RequestDaoConnected: ContractDaoConnected: BarDaoConnected](
     settings: AppSettings,
     readerEc: ExecutionContext,
     clientId: Int
   ): Resource[F, IbFeed[F]] =
     for {
-      implicit0(feedReqService: FeedRequestService[F]) <- FeedRequestService.make[F](settings.limits)
-      eWrapper                                         <- IbkrFeedWrapper[F](feedReqService)
+      implicit0(feedReqService: FeedRequestService[F]) <- FeedRequestService.make[F](settings.broker.limits)
+      eWrapper                                         <- IbFeedWrapper[F](feedReqService)
       (client, reader, readerSignal) <- Resource.eval(
-        Logger[F].info("Making ibkr pieces") *>
+        Logger[F].info("Making ib pieces") *>
           Sync[F].delay {
             val readerSignal = new EJavaSignal()
             val client       = new EClientSocket(eWrapper, readerSignal)
@@ -83,9 +83,9 @@ object IbFeed {
             FeedShutdown.asLeft[Unit]
         }
         .flatMap {
-          case Left(ex) if ex == FeedShutdown  => Temporal[F].sleep(50.millis).as(None)
-          case Left(ex)  => Logger[F].error(s"Ibkr reader exception ${ex.getMessage}").as(().some)
-          case Right(_) => None.pure[F]
+          case Left(ex) if ex == FeedShutdown  => Temporal[F].sleep(50.millis).as(Option.empty[Unit])
+          case Left(ex)  => Logger[F].error(s"Ibkr reader exception ${ex.getMessage}").as(Option[Unit](()))
+          case Right(_) => Sync[F].pure(Option.empty[Unit])
         }
         .untilDefinedM
         .background

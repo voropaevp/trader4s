@@ -10,10 +10,8 @@ import domain.feed.Limits._
 import model.datastax.ib.feed.ast.{BarSize, RequestType}
 import model.datastax.ib.feed.request.{Request, RequestData}
 import org.typelevel.log4cats.Logger
-import utils.config.Config
 
 import scala.concurrent.duration._
-
 
 class Limits[F[_]: Async: Temporal: Clock: Logger](
   limit10Min: Hist10MinLimit[F],
@@ -148,7 +146,7 @@ object Limits {
 
   }
 
-  def make[F[_]: Async: Temporal: Clock: Logger](lim: Config.Limits): Resource[F, Limits[F]] =
+  def make[F[_]: Async: Temporal: Clock: Logger](lim: config.LimitsConfig): Resource[F, Limits[F]] =
     for {
       hist10Min          <- Resource.eval(Ref[F].of(Set.empty[FiniteDuration]))
       hist10MinLock      <- Resource.eval(Semaphore[F](lim.hist10MinLimit))
@@ -158,9 +156,9 @@ object Limits {
       contractSizeLimit = new SameContractSizeLimit(lim.sameContractAndSizeLimit, reqByContSizeLocks)
       subLimit          = new SubLimit(concurrentSubsLock)
       limit10Min        = new Hist10MinLimit(hist10Min, hist10MinLock, hist10MinMainLock)
-      _ <- contractSizeLimit.refresh.foreverM.background
-      _ <- subLimit.refresh.foreverM.background
-      _ <- limit10Min.refresh.foreverM.background
+      _ <- contractSizeLimit.refresh.foreverM.background.void
+      _ <- subLimit.refresh.foreverM.background.void
+      _ <- limit10Min.refresh.foreverM.background.void
     } yield new Limits(
       contractSizeLimit = contractSizeLimit,
       subLimit          = subLimit,

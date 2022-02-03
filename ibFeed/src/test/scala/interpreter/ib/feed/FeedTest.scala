@@ -1,7 +1,7 @@
-package interpreter.ibkr.feed
+package interpreter.ib.feed
 
 import cats.effect.{IO, Resource, Sync}
-import utils.config.BrokerSettings
+import config.BrokerSettings
 
 import java.net.InetAddress
 import domain.model.MarketData

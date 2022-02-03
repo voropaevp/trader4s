@@ -1,5 +1,6 @@
 package domain.feed
 
+import cats.{MonadError, MonadThrow}
 import fs2.Stream
 import cats.effect.{Async, Clock, Ref, Resource, Sync, Temporal}
 import cats.effect.std.{Dispatcher, Queue}
@@ -14,7 +15,7 @@ import model.datastax.ib.feed.response.Response
 import model.datastax.ib.feed.response.contract.Contract
 import model.datastax.ib.feed.response.data.Bar
 import com.ib.client.{Bar => IbBar, ContractDetails => IbContractDetails}
-import utils.config.Config
+import config._
 
 import scala.collection.immutable.SortedMap
 
@@ -58,7 +59,7 @@ class FeedRequestService[F[_]: Async: Temporal: Clock: Logger: BarDaoConnected: 
                 case _: FeedShutdown.type =>
                   RequestDaoConnected[F].changeState(request.reqId, RequestState.Cancelled, count.some, ex.some)
                 case _ => RequestDaoConnected[F].changeState(request.reqId, RequestState.Cancelled, count.some, ex.some)
-              }).as(throw ex)
+              }) >> MonadThrow[F].raiseError[AnyRef](ex)
             case Right(el) =>
               if (count == 1)
                 RequestDaoConnected[F].changeState(request.reqId, RequestState.ReceivingData).as(el)
@@ -85,7 +86,7 @@ class FeedRequestService[F[_]: Async: Temporal: Clock: Logger: BarDaoConnected: 
       .flatMap(c =>
         c.get(id) match {
           case Some(req) => req.offer(data.asRight[FeedException].some)
-          case None      => errorAll(CriticalFeedError(s"Rogue request Id [$id] received data"))
+          case None      => errorAllF(CriticalFeedError(s"Rogue request Id [$id] received data"))
         }
       )
   }
@@ -97,22 +98,24 @@ class FeedRequestService[F[_]: Async: Temporal: Clock: Logger: BarDaoConnected: 
       .get
       .flatMap(_.get(id) match {
         case Some(req) => req.offer(ex.asLeft[AnyRef].some)
-        case None      => errorAll(CriticalFeedError(s"Rogue request Id [$id] failed"))
+        case None      => errorAllF(CriticalFeedError(s"Rogue request Id [$id] failed"))
       })
 
-  def errorAll(ex: FeedException): F[Unit] =
+  def errorAllF(ex: FeedException): F[Unit] =
     for {
       _       <- Logger[F].error(s"Shutting down all request due to [$ex]")
       content <- queuedReq.get
       _       <- content.values.toList.traverse(_.offer(ex.asLeft[AnyRef].some))
     } yield ()
 
+  def errorAll(ex: FeedException): Unit = dispatcher.unsafeRunAndForget(errorAllF(ex))
+
   def close(id: Int): Unit = dispatcher.unsafeRunAndForget {
     queuedReq
       .get
       .flatMap(_.get(id) match {
         case Some(req) => req.offer(None)
-        case None      => errorAll(CriticalFeedError(s"Rogue request Id [$id] ended"))
+        case None      => errorAllF(CriticalFeedError(s"Rogue request Id [$id] ended"))
       })
   }
 }
@@ -123,11 +126,11 @@ object FeedRequestService {
   implicit def unsafeLogger[F[_]: Sync]: SelfAwareStructuredLogger[F] = Slf4jLogger.getLogger[F]
 
   def make[F[_]: Async: Temporal: Clock: BarDaoConnected: RequestDaoConnected: ContractDaoConnected](
-    config: Config.Limits
+    limitsConfig: LimitsConfig
   ): Resource[F, FeedRequestService[F]] =
     for {
       dsp    <- Dispatcher[F]
-      limits <- Limits.make[F](config)
+      limits <- Limits.make[F](limitsConfig)
       frs <- Resource.make(
         for {
           queuedReq                <- Ref[F].of(SortedMap.empty[Int, Queue[F, Option[Either[FeedException, AnyRef]]]])
@@ -140,6 +143,6 @@ object FeedRequestService {
           dispatcher          = dsp,
           ibConnectionTracker = ibConnectionErrorHistory
         )
-      )(_.errorAll(FeedShutdown))
+      )(_.errorAllF(FeedShutdown))
     } yield frs
 }

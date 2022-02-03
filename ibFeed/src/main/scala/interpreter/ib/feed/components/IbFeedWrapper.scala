@@ -1,18 +1,17 @@
-package interpreter.ibkr.feed.components
+package interpreter.ib.feed.components
 
 import cats.effect.{Async, Resource, Sync}
+
+import domain.feed.FeedException._
+import domain.feed.FeedRequestService
+
 import com.ib.client._
 import com.typesafe.scalalogging.LazyLogging
-import domain.feed.FeedException._
-import model.datastax.ib.feed.response.data.{Bar          => MBar}
-import model.datastax.ib.feed.response.contract.{Contract => MContact}
 
 import java.{lang, util}
 import scala.jdk.CollectionConverters._
-import domain.feed.FeedRequestService
-import model.datastax.ib.feed.request.{RequestContract, RequestData}
 
-class IbkrFeedWrapper[F[_]: Async](feedRequests: FeedRequestService[F]) extends EWrapper with LazyLogging {
+class IbFeedWrapper[F[_]: Async](feedRequests: FeedRequestService[F]) extends EWrapper with LazyLogging {
 
   override def replaceFAEnd(x$1: Int, x$2: String): Unit =
     logger.warn(s"Unexpected data [${x$1} ${x$2}] in replaceFAEnd received from broker ")
@@ -380,7 +379,7 @@ class IbkrFeedWrapper[F[_]: Async](feedRequests: FeedRequestService[F]) extends 
 
 }
 
-object IbkrFeedWrapper {
-  def apply[F[_]: Async](feedRequests: FeedRequestService[F]): Resource[F, IbkrFeedWrapper[F]] =
-    Resource.eval(Sync[F].delay(new IbkrFeedWrapper(feedRequests)))
+object IbFeedWrapper {
+  def apply[F[_]: Async](feedRequests: FeedRequestService[F]): Resource[F, IbFeedWrapper[F]] =
+    Resource.eval(Sync[F].delay(new IbFeedWrapper(feedRequests)))
 }

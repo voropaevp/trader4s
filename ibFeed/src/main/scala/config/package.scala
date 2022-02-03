@@ -1,16 +1,16 @@
-package utils.config
-
+import domain.feed.FeedException
 import pureconfig._
 import pureconfig.generic.auto._
 import model.datastax.ib.feed.ast.{BarSize, DataType, Exchange, SecurityType}
+
 import java.util.UUID
 import model.datastax.ib.feed.request.RequestContract
 
 import scala.concurrent.duration.FiniteDuration
 
-object Config {
+package object config {
 
-  case class Limits(
+  case class LimitsConfig(
     concurrentSubLimit: Int,
     hist10MinLimit: Int,
     sameContractAndSizeLimit: Int,
@@ -51,7 +51,7 @@ object Config {
   }
 
   case class WatchEntry(
-    contract: ContractEntry,
+    contractEntry: ContractEntry,
     dataType: DataType,
     size: BarSize,
     syncInterval: FiniteDuration
@@ -61,9 +61,22 @@ object Config {
   implicit val myBarSizeReader: ConfigReader[BarSize]   = ConfigReader[String].map(BarSize.apply)
   implicit val myExchReader: ConfigReader[Exchange]     = ConfigReader[String].map(Exchange.apply)
 
-  case class BrokerSettings(ip: String, port: Int, requestTimeout: FiniteDuration, clientId: Int)
+  case class BrokerSettings(ip: String, port: Int, requestTimeout: FiniteDuration, clientId: Int, limits: LimitsConfig)
 
-  case class AppSettings(broker: BrokerSettings, limits: Limits, watchList: List[WatchEntry])
+  case class AppSettings(
+    broker: BrokerSettings,
+    watchList: List[WatchEntry]
+  )
 
-  ConfigSource.default.load[AppSettings]
+  def parse: AppSettings =
+    ConfigSource
+      .default
+      .load[AppSettings]
+      .fold(
+        err =>
+          throw new FeedException {
+            override def message: String = err.prettyPrint()
+          },
+        identity
+      )
 }

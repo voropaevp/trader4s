@@ -32,7 +32,7 @@ object Dependencies {
     val cassandraMigrator         = "org.cognitor.cassandra" % "cassandra-migration" % V.CassandraMigrator
     // logging
     val logback      = "ch.qos.logback"             % "logback-classic" % V.logback      // backend
-    val scalaLogging = "com.typesafe.scala-logging" %% "scala-logging"  % V.scalaLogging // for ibkr wrapper
+    val scalaLogging = "com.typesafe.scala-logging" %% "scala-logging"  % V.scalaLogging // for ib wrapper
     val log4cats     = "org.typelevel"              %% "log4cats-slf4j" % V.log4cats     // for everything else
 
     // cats

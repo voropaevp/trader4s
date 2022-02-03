@@ -1,4 +1,4 @@
-package interpreter.ibkr.feed
+package interpreter.ib.feed
 
 import org.scalatest._
 import org.scalatest.flatspec.AsyncFlatSpec

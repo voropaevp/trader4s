@@ -6,7 +6,7 @@ import cats.effect.{Async, Resource}
 import fs2.{Chunk, Stream}
 import com.datastax.oss.driver.api.core.MappedAsyncPagingIterable
 import domain.feed.FeedException
-import utils.config.Config.ContractEntry
+import config.{ContractEntry, WatchEntry}
 import model.datastax.ib.feed.ast._
 import model.datastax.ib.feed.request._
 import model.datastax.ib.feed.response.contract.{Contract, ContractByProps, ContractDao}
@@ -32,8 +32,8 @@ object ConnectedDao {
     def changeState(
       id: UUID,
       newState: RequestState,
-      rowsReceived: Option[Long] = None,
-      error: Option[FeedException]     = None
+      rowsReceived: Option[Long]   = None,
+      error: Option[FeedException] = None
     ): F[Unit]
 
     def getReqDataById(id: UUID): F[Option[RequestData]]
@@ -48,6 +48,23 @@ object ConnectedDao {
       startTimeMin: Instant,
       startTimeMax: Instant
     ): Stream[F, UUID]
+
+    def getByConfigEntry(entry: ContractEntry): F[Option[RequestContractByProps]] = getByContProp(
+      entry.symbol,
+      entry.secType,
+      entry.exchange,
+      entry.strike,
+      entry.right,
+      entry.multiplier,
+      entry.currency,
+      entry.localSymbol,
+      entry.primaryExch,
+      None,
+      entry.secIdType,
+      entry.secId,
+      None,
+      entry.marketName
+    )
 
     def getByContProp(
       symbol: String,
@@ -77,35 +94,7 @@ object ConnectedDao {
   trait ContractDaoConnected[F[_]] {
     def get(contId: Int): F[Option[Contract]]
 
-    def getByProps(e: ContractEntry): F[Option[ContractByProps]] = getByProps(
-      e.exchange,
-      e.symbol,
-      e.secType,
-      e.strike,
-      e.right,
-      e.multiplier,
-      e.currency,
-      e.localSymbol,
-      e.primaryExch,
-      e.secIdType,
-      e.secId,
-      e.marketName
-    )
-
-    def getByProps(
-      exchange: Exchange,
-      symbol: String,
-      secType: SecurityType,
-      strike: Double,
-      right: Option[String],
-      multiplier: Option[String],
-      currency: Option[String],
-      localSymbol: Option[String],
-      primaryExch: Option[Exchange],
-      secIdType: Option[String],
-      secId: Option[String],
-      marketName: Option[String]
-    ): F[Option[ContractByProps]]
+    def getByConfigEntry(entry: ContractEntry): F[Either[ContractEntry, Contract]]
 
     def create(contract: Contract): F[Unit]
 
@@ -162,15 +151,19 @@ object ConnectedDao {
           def changeState(
             id: UUID,
             newState: RequestState,
-            rowsReceived: Option[Long] = None,
-            error: Option[FeedException]     = None
+            rowsReceived: Option[Long]   = None,
+            error: Option[FeedException] = None
           ): F[Unit] =
             OptionT(getReqDataById(id))
-              .flatMap(req => liftF(requestDao.changeStateData(req, newState, rowsReceived, error.map(_.toString))))
-              .orElse(
-                OptionT(getReqContById(id)).flatMap(req => liftF(requestDao.changeStateContract(req, newState, error)))
+              .flatMapF(req =>
+                liftF(requestDao.changeStateData(req, newState, rowsReceived, error.map(_.toString))).as(().some)
               )
-              .getOrElseF(Async[F].raiseError(DbError("Changing state for missing data request")))
+              .orElse(
+                OptionT(getReqContById(id)).flatMapF(req =>
+                  liftF(requestDao.changeStateContract(req, newState, error.map(_.getMessage))).as(().some)
+                )
+              )
+              .getOrElseF(Async[F].raiseError(DbError("Changing state for missing data request")).void)
 
           def getReqDataById(id: UUID): F[Option[RequestData]] = liftF(requestDao.getDataById(id))
 
@@ -223,16 +216,35 @@ object ConnectedDao {
           )
 
           def create(req: Request): F[Unit] = req match {
-            case r: RequestContract =>liftF(requestDao.createContract(r))
-            case r: RequestData =>liftF(requestDao.createData(r))
-            case _ => ().pure[F]
+            case r: RequestContract => liftF(requestDao.createContract(r))
+            case r: RequestData     => liftF(requestDao.createData(r))
+            case _                  => ().pure[F]
           }
         }
 
         val contractDaoConnected = new ContractDaoConnected[F] {
-          def get(contId: Int): F[Option[Contract]] = liftF(contractDao.get(contId))
+          override def get(contId: Int): F[Option[Contract]] = liftF(contractDao.get(contId))
 
-          def getByProps(
+          override def getByConfigEntry(e: ContractEntry): F[Either[ContractEntry, Contract]] =
+            getByProps(
+              e.exchange,
+              e.symbol,
+              e.secType,
+              e.strike,
+              e.right,
+              e.multiplier,
+              e.currency,
+              e.localSymbol,
+              e.primaryExch,
+              e.secIdType,
+              e.secId,
+              e.marketName
+            ).map(_.map(_.contId)).flatMap {
+              case Some(value) => get(value).map(_.toRight(e))
+              case None        => Async[F].pure(e.asLeft)
+            }
+
+          private def getByProps(
             exchange: Exchange,
             symbol: String,
             secType: SecurityType,
@@ -263,7 +275,7 @@ object ConnectedDao {
               )
             )
 
-          def create(contract: Contract): F[Unit] = liftF(contractDao.create(contract))
+          override def create(contract: Contract): F[Unit] = liftF(contractDao.create(contract))
         }
 
         (contractDaoConnected, requestDaoConnected, barDaoConnected)
