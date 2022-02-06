@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS historic_data.bar
+CREATE TABLE IF NOT EXISTS bar
 (
     ts      timestamp,
     date    date,

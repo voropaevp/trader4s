@@ -127,7 +127,12 @@ object ConnectedDao {
     Stream.eval(liftF(under)).flatMap(page[F, T])
 
   def init[F[_]: Async]: Resource[F, (ContractDaoConnected[F], RequestDaoConnected[F], BarDaoConnected[F])] =
-    DbSession.makeSession("meta").product(DbSession.makeSession("data")).map {
+    initWithPrefix("")
+
+  private[db] def initWithPrefix[F[_]: Async](
+    schemaPrefix: String
+  ): Resource[F, (ContractDaoConnected[F], RequestDaoConnected[F], BarDaoConnected[F])] =
+    DbSession.makeSession("meta", schemaPrefix).product(DbSession.makeSession("data", schemaPrefix)).map {
       case (metaSession, dataSession) =>
         lazy val mapperData: FeedMapper = new FeedMapperBuilder(dataSession).build()
         lazy val mapperMeta: FeedMapper = new FeedMapperBuilder(metaSession).build()

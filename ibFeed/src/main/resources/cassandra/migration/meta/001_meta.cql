@@ -1,3 +1,4 @@
+
 CREATE TABLE IF NOT EXISTS state
 (
     req_id        uuid,
@@ -50,7 +51,7 @@ CREATE TYPE ComboLeg (
     cont_id int,
     ratio int,
     action varchar,
-    exchange: varchar,
+    exchange varchar,
     open_close int,
     short_sale_slot int,
     designated_location varchar,
