@@ -8,7 +8,8 @@
 /utils/target/
 /.idea/
 /.ops/
-/ops
+/ops/
 /.bsp/
 /thirdPartyJars
 /docker-compose.yml
+target

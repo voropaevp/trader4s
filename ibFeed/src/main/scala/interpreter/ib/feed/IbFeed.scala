@@ -7,8 +7,8 @@ import cats.effect.{Async, Resource, Sync, Temporal}
 import cats.effect.kernel.Clock
 import interpreter.ib.feed.components.IbFeedWrapper
 import domain.feed.{FeedAlgebra, FeedRequestService}
-import config.AppSettings
 import com.ib.client.{EClientSocket, EJavaSignal, EReader}
+import config.BrokerSettings
 import db.ConnectedDao.{BarDaoConnected, ContractDaoConnected, RequestDaoConnected}
 import domain.feed.FeedException._
 import model.datastax.ib.feed.ast.RequestType
@@ -17,8 +17,7 @@ import model.datastax.ib.feed.response.contract.Contract
 import model.datastax.ib.feed.response.data.Bar
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 import org.typelevel.log4cats.{Logger, SelfAwareStructuredLogger}
-
-import scala.concurrent.ExecutionContext
+import utils.ExecutionContexts
 import scala.concurrent.duration.DurationInt
 
 class IbFeed[F[_]: Async: FeedRequestService: RequestDaoConnected: ContractDaoConnected] extends FeedAlgebra[F] {
@@ -52,12 +51,10 @@ object IbFeed {
   implicit def unsafeLogger[F[_]: Sync]: SelfAwareStructuredLogger[F] = Slf4jLogger.getLogger[F]
 
   def apply[F[_]: Async: Clock: Temporal: RequestDaoConnected: ContractDaoConnected: BarDaoConnected](
-    settings: AppSettings,
-    readerEc: ExecutionContext,
-    clientId: Int
+    brokerSetting: BrokerSettings
   ): Resource[F, IbFeed[F]] =
     for {
-      implicit0(feedReqService: FeedRequestService[F]) <- FeedRequestService.make[F](settings.broker.limits)
+      implicit0(feedReqService: FeedRequestService[F]) <- FeedRequestService.make[F](brokerSetting.limits)
       eWrapper                                         <- IbFeedWrapper[F](feedReqService)
       (client, reader, readerSignal) <- Resource.eval(
         Logger[F].info("Making ib pieces") *>
@@ -67,13 +64,16 @@ object IbFeed {
             // It is important that the main EReader object is not created until after a connection has
             // been established. The initial connection results in a negotiated common version between TWS and
             // the API client which will be needed by the EReader thread in interpreting subsequent messages.
-            client.eConnect(settings.broker.ip, settings.broker.port, settings.broker.clientId)
+            client.eConnect(brokerSetting.ip, brokerSetting.port, brokerSetting.clientId)
             val reader = new EReader(client, readerSignal)
             // TODO move reader.start() to here
             (client, reader, readerSignal)
           }
       )
-      _ <- Resource.eval(Sync[F].delay(reader.start()) *> Logger[F].info(s"${client.isConnected}"))
+      fixedThreadPool <- ExecutionContexts.fixedThreadPool(brokerSetting.nThreads)
+      _ <- Resource
+        .eval(Sync[F].delay(reader.start()) *> Logger[F].info(s"${client.isConnected}"))
+        .evalOn(fixedThreadPool)
       _ <- Sync[F]
         .blocking {
           if (client.isConnected) {
@@ -83,9 +83,9 @@ object IbFeed {
             FeedShutdown.asLeft[Unit]
         }
         .flatMap {
-          case Left(ex) if ex == FeedShutdown  => Temporal[F].sleep(50.millis).as(Option.empty[Unit])
-          case Left(ex)  => Logger[F].error(s"Ibkr reader exception ${ex.getMessage}").as(Option[Unit](()))
-          case Right(_) => Sync[F].pure(Option.empty[Unit])
+          case Left(ex) if ex == FeedShutdown => Temporal[F].sleep(50.millis).as(Option.empty[Unit])
+          case Left(ex)                       => Logger[F].error(s"Ibkr reader exception ${ex.getMessage}").as(Option[Unit](()))
+          case Right(_)                       => Sync[F].pure(Option.empty[Unit])
         }
         .untilDefinedM
         .background

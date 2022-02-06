@@ -1,3 +1,5 @@
+import cats.implicits.catsSyntaxApply
+import cats.{Applicative, MonadThrow}
 import domain.feed.FeedException
 import pureconfig._
 import pureconfig.generic.auto._
@@ -5,6 +7,7 @@ import model.datastax.ib.feed.ast.{BarSize, DataType, Exchange, SecurityType}
 
 import java.util.UUID
 import model.datastax.ib.feed.request.RequestContract
+import org.typelevel.log4cats.Logger
 
 import scala.concurrent.duration.FiniteDuration
 
@@ -13,8 +16,7 @@ package object config {
   case class LimitsConfig(
     concurrentSubLimit: Int,
     hist10MinLimit: Int,
-    sameContractAndSizeLimit: Int,
-    waitQueueSize: Int
+    sameContractAndSizeLimit: Int
   )
 
   case class ContractEntry(
@@ -61,22 +63,30 @@ package object config {
   implicit val myBarSizeReader: ConfigReader[BarSize]   = ConfigReader[String].map(BarSize.apply)
   implicit val myExchReader: ConfigReader[Exchange]     = ConfigReader[String].map(Exchange.apply)
 
-  case class BrokerSettings(ip: String, port: Int, requestTimeout: FiniteDuration, clientId: Int, limits: LimitsConfig)
+  case class BrokerSettings(
+    ip: String,
+    port: Int,
+    requestTimeout: FiniteDuration,
+    clientId: Int,
+    limits: LimitsConfig,
+    nThreads: Int
+  )
 
   case class AppSettings(
     broker: BrokerSettings,
     watchList: List[WatchEntry]
   )
 
-  def parse: AppSettings =
+  def parse[F[_]: Logger: MonadThrow: Applicative]: F[AppSettings] =
     ConfigSource
       .default
       .load[AppSettings]
       .fold(
         err =>
-          throw new FeedException {
+          Logger[F].error(err.prettyPrint()) *>
+          MonadThrow[F].raiseError(new FeedException {
             override def message: String = err.prettyPrint()
-          },
-        identity
+          }),
+        Applicative[F].pure
       )
 }
