@@ -1,6 +1,8 @@
 package db
 
+import cats.Monad
 import cats.data.OptionT
+import cats.effect.kernel.Sync
 import cats.syntax.all._
 import cats.effect.{Async, Resource}
 import fs2.{Chunk, Stream}
@@ -22,6 +24,15 @@ object ConnectedDao {
 
   trait BarDaoConnected[F[_]] {
     def write(bar: Bar): F[Unit]
+
+    def get(
+      contId: Int,
+      size: BarSize,
+      dataType: DataType,
+      head: Instant,
+      tail: Instant,
+      limit: Int
+    ): Stream[F, Bar]
 
     def headTs(contId: Int, size: BarSize, dataType: DataType): F[Instant]
 
@@ -114,13 +125,20 @@ object ConnectedDao {
   private def liftF[F[_]: Async, T](under: CompletionStage[T]): F[T] =
     Async[F].fromCompletableFuture(Async[F].delay(under.toCompletableFuture))
 
+  private def liftFUnit[F[_]: Async](under: CompletionStage[Void]): F[Unit] =
+    Async[F].fromCompletableFuture(Async[F].delay(under.toCompletableFuture)).void
+
   private def page[F[_]: Async, T](it: MappedAsyncPagingIterable[T]): Stream[F, T] =
-    Stream.unfoldChunkEval(it.hasMorePages)(rem =>
-      if (rem)
-        Async[F].delay[Option[(Chunk[T], Boolean)]] {
-          Some((Chunk.iterable(it.currentPage().asScala), it.hasMorePages))
-        } else
-        Async[F].pure[Option[(Chunk[T], Boolean)]](None)
+    Stream.unfoldChunkEval(it)(thisIt =>
+      if (thisIt.remaining() > 0)
+        (Chunk.iterable(thisIt.currentPage().asScala), thisIt).some.pure[F]
+      else if (thisIt.hasMorePages)
+        Async[F]
+          .fromCompletableFuture(thisIt.fetchNextPage().toCompletableFuture.pure[F])
+          .map(nextIt =>
+            (Chunk.iterable(nextIt.currentPage().asScala), nextIt).some)
+      else
+        Async[F].pure[Option[(Chunk[T], MappedAsyncPagingIterable[T])]](None)
     )
 
   private def liftStream[F[_]: Async, T](under: CompletionStage[MappedAsyncPagingIterable[T]]): Stream[F, T] =
@@ -134,8 +152,10 @@ object ConnectedDao {
   ): Resource[F, (ContractDaoConnected[F], RequestDaoConnected[F], BarDaoConnected[F])] =
     DbSession.makeSession("meta", schemaPrefix).product(DbSession.makeSession("data", schemaPrefix)).map {
       case (metaSession, dataSession) =>
-        lazy val mapperData: FeedMapper = new FeedMapperBuilder(dataSession).build()
-        lazy val mapperMeta: FeedMapper = new FeedMapperBuilder(metaSession).build()
+        lazy val mapperData: FeedMapper =
+          new FeedMapperBuilder(dataSession).withDefaultKeyspace(s"${schemaPrefix}data").build()
+        lazy val mapperMeta: FeedMapper =
+          new FeedMapperBuilder(metaSession).withDefaultKeyspace(s"${schemaPrefix}meta").build()
 
         lazy val barDao: BarDao           = mapperData.BarDao()
         lazy val requestDao: RequestDao   = mapperMeta.RequestDao()
@@ -143,7 +163,11 @@ object ConnectedDao {
 
         val barDaoConnected = new BarDaoConnected[F] {
 
-          def write(bar: Bar): F[Unit] = liftF(barDao.create(bar))
+          def write(bar: Bar): F[Unit] = liftFUnit(barDao.create(bar))
+
+          def get(contId: Int, size: BarSize, dataType: DataType, head: Instant, tail: Instant, limit: Int)
+            : Stream[F, Bar] =
+            liftStream(barDao.selectRangeLimit(contId, size, dataType, head, tail, limit))
 
           def headTs(contId: Int, size: BarSize, dataType: DataType): F[Instant] =
             liftF(barDao.headTs(contId, size, dataType))

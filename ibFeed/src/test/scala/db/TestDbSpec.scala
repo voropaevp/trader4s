@@ -1,6 +1,6 @@
 package db
 
-import cats.effect.IO
+import cats.effect.{IO, Resource}
 import cats.effect.unsafe.implicits.global
 import db.DbSession.{makeMigrationSession, makeSession}
 import org.scalatest.freespec.AnyFreeSpec
@@ -22,15 +22,4 @@ class TestDbSpec extends AnyFreeSpec with BeforeAndAfterAll with BeforeAndAfterE
       .use(session => IO(session.execute(query)).map(_.iterator().next().getFormattedContents))
       .unsafeRunSync()
 
-  def runWithTestDao[T](ev: IO[T]): T =
-    ConnectedDao
-      .initWithPrefix[IO](testSchemaPrefix)
-      .use {
-        case (a, b, c) =>
-          implicit val _a: ConnectedDao.ContractDaoConnected[IO] = a
-          implicit val _b: ConnectedDao.RequestDaoConnected[IO]  = b
-          implicit val _c: ConnectedDao.BarDaoConnected[IO]      = c
-          ev
-      }
-      .unsafeRunSync()
 }

@@ -1,4 +1,3 @@
-
 CREATE TABLE IF NOT EXISTS state
 (
     req_id        uuid,
@@ -26,26 +25,6 @@ CREATE TABLE IF NOT EXISTS state_description
     primary key (state_id)
 );
 
-CREATE TABLE IF NOT EXISTS contract
-(
-    cont_id                           int,
-    exchange                          varchar,
-    symbol                            varchar,
-    currency                          varchar,
-    sec_type                          varchar,
-    last_trade_date_or_contract_month varchar,
-    strike                            varchar,
-    multiplier                        varchar,
-    primary_exch                      varchar,
-    local_symbol                      varchar,
-    trading_class                     varchar,
-    sec_id_type                       varchar,
-    sec_id                            varchar,
-    delta_price                       double,
-    delta                             double,
-    include_expired                   boolean,
-    primary key ( cont_id )
-);
 
 CREATE TYPE ComboLeg (
     cont_id int,
@@ -64,72 +43,6 @@ CREATE TYPE DeltaNeutralContract (
     price double
     );
 
-CREATE TABLE IF NOT EXISTS contract
-(
-    cont_id                           int,
-    symbol                            varchar,
-    sec_type                          varchar,
-    last_trade_date_or_contract_month varchar,
-    strike                            double,
-    right                             varchar,
-    multiplier                        varchar,
-    exchange                          varchar,
-    currency                          varchar,
-    local_symbol                      varchar,
-    primary_exch                      varchar,
-    include_expired                   boolean,
-    trading_class                     varchar,
-    sec_id_type                       varchar,
-    sec_id                            varchar,
-    combo_legs_description            varchar,
-    combo_legs                        list<ComboLeg>,
-    delta_neutral_contract            DeltaNeutralContract,
-    market_name                       varchar,
-    min_tick                          double,
-    price_magnifier                   int,
-    order_types                       varchar,
-    valid_exchanges                   varchar,
-    under_con_id                      int,
-    long_name                         varchar,
-    contract_month                    varchar,
-    industry                          varchar,
-    category                          varchar,
-    subcategory                       varchar,
-    time_zone_id                      varchar,
-    trading_hours                     varchar,
-    liquid_hours                      varchar,
-    ev_rule                           varchar,
-    ev_multiplier                     double,
-    agg_group                         int,
-    sec_id_list                       list<tuple<varchar, varchar>>,
-    under_symbol                      varchar,
-    under_sec_type                    varchar,
-    market_rule_ids                   varchar,
-    real_expiration_date              varchar,
-    last_trade_time                   varchar,
-    stock_type                        varchar,
-    cusip                             varchar,
-    ratings                           varchar,
-    desc_append                       varchar,
-    bond_type                         varchar,
-    coupon_type                       varchar,
-    callable                          boolean,
-    putable                           boolean,
-    coupon                            double,
-    convertible                       boolean,
-    maturity                          varchar,
-    issue_date                        varchar,
-    next_option_date                  varchar,
-    next_option_type                  varchar,
-    next_option_partial               boolean,
-    notes                             varchar,
-    min_size                          decimal,
-    size_increment                    decimal,
-    suggested_size_increment          decimal,
-    create_time                       timestamp,
-    primary key ( cont_id )
-);
-
 CREATE TABLE IF NOT EXISTS contract_by_exc_sym_type
 (
     cont_id  int,
@@ -137,4 +50,68 @@ CREATE TABLE IF NOT EXISTS contract_by_exc_sym_type
     symbol   varchar,
     sec_type varchar,
     PRIMARY KEY ( (exchange, symbol, sec_type) )
-)
+);
+
+
+CREATE TABLE IF NOT EXISTS contract
+(
+    cont_id                           int,
+    symbol                            text,
+    sec_type                          text,
+    last_trade_date_or_contract_month text,
+    strike                            double,
+    right                             text,
+    multiplier                        text,
+    exchange                          text,
+    currency                          text,
+    local_symbol                      text,
+    primary_exch                      text,
+    trading_class                     text,
+    include_expired                   boolean,
+    sec_id                            text,
+    sec_id_type                       text,
+    combo_legs_description            text,
+    combo_legs                        list<frozen<ComboLeg>>,
+    delta_neutral_contract            DeltaNeutralContract,
+    market_name                       text,
+    min_tick                          double,
+    price_magnifier                   int,
+    order_types                       text,
+    valid_exchanges                   text,
+    under_con_id                      int,
+    long_name                         text,
+    contract_month                    text,
+    industry                          text,
+    category                          text,
+    subcategory                       text,
+    time_zone_id                      text,
+    trading_hours                     text,
+    liquid_hours                      text,
+    ev_rule                           text,
+    ev_multiplier                     double,
+    md_size_multiplier                int,
+    agg_group                         int,
+    sec_id_list                       list<tuple<text, text>>,
+    under_symbol                      text,
+    under_sec_type                    text,
+    market_rule_ids                   text,
+    real_expiration_date              text,
+    last_trade_time                   text,
+    stock_type                        text,
+    cusip                             text,
+    ratings                           text,
+    desc_append                       text,
+    bond_type                         text,
+    coupon_type                       text,
+    callable                          boolean,
+    putable                           boolean,
+    coupon                            double,
+    convertible                       boolean,
+    maturity                          text,
+    issue_date                        text,
+    next_option_date                  text,
+    next_option_type                  text,
+    next_option_partial               boolean,
+    notes                             text,
+    primary key ( cont_id )
+);

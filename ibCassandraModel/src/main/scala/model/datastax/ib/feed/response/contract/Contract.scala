@@ -182,10 +182,10 @@ case class Contract(
   //  sizeIncrement: Option[BigDecimal],
   //    Order's suggested size increment.
   //  suggestedSizeIncrement: Option[BigDecimal]
-  @Transient needsSyncWithIb: Boolean = false
 ) extends Response {
 
-  @Transient lazy val ibContract: IbContract = {
+  @Transient
+  lazy val ibContract: IbContract = {
     val c = new IbContract(
       this.contId,
       this.symbol,

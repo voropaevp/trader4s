@@ -2,7 +2,7 @@ package model.datastax.ib.feed.codec
 import scala.reflect._
 import com.datastax.oss.driver.api.core.ProtocolVersion
 import com.datastax.oss.driver.api.core.`type`.codec.registry.MutableCodecRegistry
-import com.datastax.oss.driver.api.core.`type`.codec.{TypeCodec, TypeCodecs}
+import com.datastax.oss.driver.api.core.`type`.codec.{ExtraTypeCodecs, TypeCodec, TypeCodecs}
 import com.datastax.oss.driver.api.core.`type`.reflect.GenericType
 import com.datastax.oss.driver.api.core.`type`.{DataTypes, DataType => DxDataType}
 import model.datastax.ib.feed.ast._
@@ -33,12 +33,18 @@ object CqlStringToAstCodec {
   def registerAll(reg: MutableCodecRegistry): Unit =
     astEncoders.foreach(reg.register)
 
-  lazy val DataTypeCodec: CqlStringToAstCodec[DataType]     = CqlStringToAstCodec(DataType.apply)
-  lazy val ReqStateCodec: CqlStringToAstCodec[RequestState] = CqlStringToAstCodec(RequestState.apply)
-  lazy val ReqTypeCodec: CqlStringToAstCodec[RequestType]   = CqlStringToAstCodec(RequestType.apply)
+  lazy val DataTypeCodec: TypeCodec[DataType]     =  CqlStringToAstCodec(DataType.apply).asInstanceOf[TypeCodec[DataType]]
+  lazy val ReqStateCodec: TypeCodec[RequestState] =  CqlStringToAstCodec(RequestState.apply).asInstanceOf[TypeCodec[RequestState]]
+  lazy val ReqTypeCodec: TypeCodec[RequestType]   =  CqlStringToAstCodec(RequestType.apply).asInstanceOf[TypeCodec[RequestType]]
+  lazy val BarSizeCodec: TypeCodec[BarSize]       =  CqlStringToAstCodec(BarSize.apply).asInstanceOf[TypeCodec[BarSize]]
 
   lazy val astEncoders = Seq(
     CqlStringToAstCodec(Exchange.apply),
+    ExtraTypeCodecs.optionalOf(TypeCodecs.INT),
+    ExtraTypeCodecs.optionalOf(TypeCodecs.ASCII),
+    ExtraTypeCodecs.optionalOf(TypeCodecs.DOUBLE),
+    ExtraTypeCodecs.optionalOf(TypeCodecs.TEXT),
+    BarSizeCodec,
     DataTypeCodec,
     ReqStateCodec,
     ReqTypeCodec,

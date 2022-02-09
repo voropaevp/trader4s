@@ -7,7 +7,9 @@ import com.ib.client.{Bar => IbBar}
 
 import java.time.Instant
 import java.time.format.DateTimeFormatter
+import java.util.Optional
 import scala.annotation.meta.field
+import scala.jdk.OptionConverters.RichOption
 
 @Entity
 case class Bar(
@@ -20,9 +22,9 @@ case class Bar(
   low: Double,
   close: Double,
   volume: Long,
-  count: Option[Int],
-  wap: Option[Double],
-  extra: Option[String]
+  count: Int,
+  wap: Double,
+  extra: String
 ) extends Response
 
 object Bar {
@@ -37,8 +39,8 @@ object Bar {
     low      = ibBar.low(),
     close    = ibBar.close(),
     volume   = ibBar.volume(),
-    count    = Some(ibBar.count()),
-    wap      = Some(ibBar.wap()),
-    extra    = None
+    count    = ibBar.count(),
+    wap      = ibBar.wap(),
+    extra    = ""
   )
 }
