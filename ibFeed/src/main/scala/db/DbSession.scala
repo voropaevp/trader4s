@@ -22,13 +22,19 @@ object DbSession {
                |  }""".stripMargin
           )
         )
-        database <- Sync[F].delay(new Database(session, s"$keyspacePrefix$keyspace").setConsistencyLevel(DefaultConsistencyLevel.QUORUM))
+        database <- Sync[F].delay(
+          new Database(session, s"$keyspacePrefix$keyspace").setConsistencyLevel(DefaultConsistencyLevel.QUORUM)
+        )
         migration <- Sync[F].delay(
           new MigrationTask(database, new MigrationRepository(s"/cassandra/migration/$keyspace"))
         )
         _ <- Sync[F].delay(migration.migrate())
         migratedSession <- Sync[F].delay(
-          CqlSession.builder.addTypeCodecs(CqlStringToAstCodec.astEncoders: _*).withKeyspace(s"$keyspacePrefix$keyspace").build
+          CqlSession
+            .builder
+            .addTypeCodecs(CqlStringToAstCodec.astEncoders: _*)
+            .withKeyspace(s"$keyspacePrefix$keyspace")
+            .build
         )
       } yield migratedSession
     }

@@ -5,7 +5,7 @@ import com.datastax.oss.driver.api.mapper.annotations._
 import model.datastax.ib.feed.ast._
 
 import java.time.Instant
-import java.util.UUID
+import java.util.{Optional, UUID}
 import java.util.concurrent.CompletionStage
 
 @Dao
@@ -35,14 +35,14 @@ trait RequestDao {
   ): CompletionStage[MappedAsyncPagingIterable[UUID]]
 
   @Select
-  def getDataById(id: UUID): CompletionStage[Option[RequestData]]
+  def getDataById(id: UUID): CompletionStage[Optional[RequestData]]
 
   @QueryProvider(
     providerClass = classOf[RequestDataProvider],
     entityHelpers = Array(classOf[RequestDataByProps], classOf[RequestData], classOf[RequestStateAudit])
   )
   @StatementAttributes(consistencyLevel = "LOCAL_QUORUM")
-  def createData(histData: RequestData): CompletionStage[Unit]
+  def createDataRequest(histData: RequestData): CompletionStage[Unit]
 
   @QueryProvider(
     providerClass = classOf[RequestDataProvider],
@@ -53,7 +53,7 @@ trait RequestDao {
     histData: RequestData,
     newState: RequestState,
     rowsReceived: Option[Long] = None,
-    error: Option[String]     = None
+    error: Option[String]      = None
   ): CompletionStage[Unit]
 
   // ---------------------------------------------------------------
@@ -62,14 +62,14 @@ trait RequestDao {
 
   @QueryProvider(
     providerClass = classOf[RequestContractProvider],
-    entityHelpers = Array(classOf[RequestContractByProps], classOf[RequestContract], classOf[RequestStateAudit])
+    entityHelpers = Array(classOf[RequestContractByEntryHash], classOf[RequestContract], classOf[RequestStateAudit])
   )
   @StatementAttributes(consistencyLevel = "LOCAL_QUORUM")
-  def createContract(contract: RequestContract): CompletionStage[Unit]
+  def createContractRequest(contract: RequestContract): CompletionStage[Unit]
 
   @QueryProvider(
     providerClass = classOf[RequestContractProvider],
-    entityHelpers = Array(classOf[RequestContractByProps], classOf[RequestContract], classOf[RequestStateAudit])
+    entityHelpers = Array(classOf[RequestContractByEntryHash], classOf[RequestContract], classOf[RequestStateAudit])
   )
   @StatementAttributes(consistencyLevel = "LOCAL_QUORUM")
   def changeStateContract(
@@ -79,24 +79,11 @@ trait RequestDao {
   ): CompletionStage[Unit]
 
   @Select
-  def getContractReqById(id: UUID): CompletionStage[Option[RequestContract]]
+  def getContractReqById(id: UUID): CompletionStage[Optional[RequestContract]]
 
   @Select
-  def getContractReqByProps(
-    symbol: String,
-    secType: SecurityType,
-    exchange: Exchange,
-    strike: Double = .0d,
-    right: Option[String],
-    multiplier: Option[String],
-    currency: Option[String],
-    localSymbol: Option[String],
-    primaryExch: Option[Exchange],
-    tradingClass: Option[String],
-    secIdType: Option[String],
-    secId: Option[String],
-    comboLegsDescription: Option[String],
-    marketName: Option[String],
+  def getContractReqByEntryHashState(
+    entryHash: Int,
     state: RequestState = RequestState.PendingId
-  ): CompletionStage[Option[RequestContractByProps]]
+  ): CompletionStage[Optional[RequestContractByEntryHash]]
 }

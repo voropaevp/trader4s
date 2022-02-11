@@ -7,6 +7,7 @@ import model.datastax.ib.feed.ast.{BarSize, DataType, Exchange, SecurityType}
 
 import java.util.UUID
 import model.datastax.ib.feed.request.RequestContract
+import model.datastax.ib.feed.response.contract.{ComboLeg, ContractEntry}
 import org.typelevel.log4cats.Logger
 
 import scala.concurrent.duration.FiniteDuration
@@ -18,39 +19,6 @@ package object config {
     hist10MinLimit: Int,
     sameContractAndSizeLimit: Int
   )
-
-  case class ContractEntry(
-    exchange: Exchange,
-    symbol: String,
-    secType: SecurityType,
-    strikeOpt: Option[Double],
-    right: Option[String],
-    multiplier: Option[String],
-    currency: Option[String],
-    localSymbol: Option[String],
-    primaryExch: Option[Exchange],
-    secIdType: Option[String],
-    secId: Option[String],
-    marketName: Option[String]
-  ) {
-    def strike: Double = strikeOpt.getOrElse(.0d)
-
-    def toContractRequest: RequestContract = RequestContract(
-      symbol      = symbol,
-      secType     = secType,
-      exchange    = exchange,
-      strike      = strikeOpt,
-      right       = right,
-      multiplier  = multiplier,
-      currency    = currency,
-      localSymbol = localSymbol,
-      primaryExch = primaryExch,
-      secIdType   = secIdType,
-      secId       = secId,
-      marketName  = marketName,
-      reqId       = UUID.randomUUID()
-    )
-  }
 
   case class WatchEntry(
     contractEntry: ContractEntry,
@@ -84,9 +52,9 @@ package object config {
       .fold(
         err =>
           Logger[F].error(err.prettyPrint()) *>
-          MonadThrow[F].raiseError(new FeedException {
-            override def message: String = err.prettyPrint()
-          }),
+            MonadThrow[F].raiseError(new FeedException {
+              override def message: String = err.prettyPrint()
+            }),
         Applicative[F].pure
       )
 }

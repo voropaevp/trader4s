@@ -5,42 +5,26 @@ import com.datastax.oss.driver.api.mapper.entity.EntityHelper
 import model.datastax.ib.Utils._
 
 import java.util.concurrent.CompletionStage
+import scala.jdk.OptionConverters.RichOptional
 
 class ContractQueryProvider(
   val context: MapperContext,
   val contractHelper: EntityHelper[Contract],
-  val contractByProps: EntityHelper[ContractByProps]
+  val contractByEntryHash: EntityHelper[ContractByEntryHash]
 ) {
-  private val session                       = context.getSession
-  private val preparedInsertContract        = prepareInsert(session, contractHelper)
-  private val preparedInsertContractByProps = prepareInsert(session, contractByProps)
+  private val session                           = context.getSession
+  private val preparedInsertContract            = prepareInsert(session, contractHelper)
+  private val preparedInsertContractByEntryHash = prepareInsert(session, contractByEntryHash)
 
   def create(contract: Contract): CompletionStage[Unit] = batch(
     Seq(
       bind(preparedInsertContract, contract, contractHelper),
       bind(
-        preparedInsertContractByProps,
-        contractToContractByProps(contract),
-        contractByProps
+        preparedInsertContractByEntryHash,
+        ContractByEntryHash(contract.entryHash, contract.contId),
+        contractByEntryHash
       )
     ),
     session
   )
-
-  private def contractToContractByProps(contract: Contract) =
-    ContractByProps(
-      contract.exchange,
-      contract.symbol,
-      contract.secType,
-      contract.strike,
-      contract.right,
-      contract.multiplier,
-      contract.currency,
-      contract.localSymbol,
-      contract.primaryExch,
-      contract.secIdType,
-      contract.secId,
-      contract.marketName,
-      contract.contId
-    )
 }

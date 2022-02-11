@@ -8,16 +8,17 @@ import java.util.concurrent.CompletionStage
 
 class RequestContractProvider(
   val context: MapperContext,
-  val reqContractHelperByProps: EntityHelper[RequestContractByProps],
+  val reqContractHelperByEntryHash: EntityHelper[RequestContractByEntryHash],
   val reqContractHelper: EntityHelper[RequestContract],
   val reqStateAuditByIdHelper: EntityHelper[RequestStateAudit]
 ) {
   private val session = context.getSession
 
-  private val preparedContractByProp       = prepareInsert(session, reqContractHelperByProps)
-  private val preparedDeleteContractByProp = session.prepare(reqContractHelperByProps.deleteByPrimaryKey().asCql)
-  private val preparedContractById         = prepareInsert(session, reqContractHelper)
-  private val preparedInsertState          = prepareInsert(session, reqStateAuditByIdHelper)
+  private val preparedContractByEntryHash = prepareInsert(session, reqContractHelperByEntryHash)
+  private val preparedDeleteContractByEntryHash =
+    session.prepare(reqContractHelperByEntryHash.deleteByPrimaryKey().asCql)
+  private val preparedContractRequestById = prepareInsert(session, reqContractHelper)
+  private val preparedInsertState         = prepareInsert(session, reqStateAuditByIdHelper)
 
   def changeStateContract(
     contractReq: RequestContract,
@@ -26,9 +27,17 @@ class RequestContractProvider(
   ): CompletionStage[Unit] =
     batch(
       Seq(
-        bind(preparedDeleteContractByProp, contractReq.toProps, reqContractHelperByProps),
-        bind(preparedContractById, contractReq.copy(state   = newState), reqContractHelper),
-        bind(preparedContractByProp, contractReq.copy(state = newState).toProps, reqContractHelperByProps),
+        bind(
+          preparedDeleteContractByEntryHash,
+          RequestContractByEntryHash(contractReq.asContractEntry.hashCode(), contractReq.state, contractReq.reqId),
+          reqContractHelperByEntryHash
+        ),
+        bind(preparedContractRequestById, contractReq.copy(state = newState), reqContractHelper),
+        bind(
+          preparedContractByEntryHash,
+          RequestContractByEntryHash(contractReq.asContractEntry.hashCode(), newState, contractReq.reqId),
+          reqContractHelperByEntryHash
+        ),
         bind(
           preparedInsertState,
           RequestStateAudit(
@@ -42,41 +51,24 @@ class RequestContractProvider(
       session
     )
 
-  def createContract(contract: RequestContract): CompletionStage[Unit] = batch(
+  def createContractRequest(contractReq: RequestContract): CompletionStage[Unit] = batch(
     Seq(
       bind(
-        preparedContractByProp,
-        RequestContractByProps(
-          symbol               = contract.symbol,
-          secType              = contract.secType,
-          exchange             = contract.exchange,
-          strike               = contract.strike.getOrElse(.0D),
-          right                = contract.right,
-          multiplier           = contract.multiplier,
-          currency             = contract.currency,
-          localSymbol          = contract.localSymbol,
-          primaryExch          = contract.primaryExch,
-          tradingClass         = contract.tradingClass,
-          secIdType            = contract.secIdType,
-          secId                = contract.secId,
-          comboLegsDescription = contract.comboLegsDescription,
-          marketName           = contract.marketName,
-          state                = contract.state,
-          reqId                = contract.reqId
-        ),
-        reqContractHelperByProps
+        preparedContractByEntryHash,
+        RequestContractByEntryHash(contractReq.asContractEntry.hashCode(), contractReq.state, contractReq.reqId),
+        reqContractHelperByEntryHash
       ),
       bind(
         preparedInsertState,
         RequestStateAudit(
-          reqId        = contract.reqId,
-          state        = contract.state,
+          reqId        = contractReq.reqId,
+          state        = contractReq.state,
           rowsReceived = None,
           error        = None
         ),
         reqStateAuditByIdHelper
       ),
-      bind(preparedContractById, contract, reqContractHelper)
+      bind(preparedContractRequestById, contractReq, reqContractHelper)
     ),
     session
   )

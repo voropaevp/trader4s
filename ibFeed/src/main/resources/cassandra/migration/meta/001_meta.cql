@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS state_description
 );
 
 
-CREATE TYPE ComboLeg (
+CREATE TYPE combo_leg (
     cont_id int,
     ratio int,
     action varchar,
@@ -37,19 +37,22 @@ CREATE TYPE ComboLeg (
     exempt_code int
     );
 
-CREATE TYPE DeltaNeutralContract (
+CREATE TYPE delta_neutral_contract (
     cont_id int,
     delta double,
     price double
     );
 
-CREATE TABLE IF NOT EXISTS contract_by_exc_sym_type
+CREATE TYPE seq_id (
+    m_tag text,
+    m_value text
+    );
+
+CREATE TABLE IF NOT EXISTS contract_by_entry_hash
 (
-    cont_id  int,
-    exchange varchar,
-    symbol   varchar,
-    sec_type varchar,
-    PRIMARY KEY ( (exchange, symbol, sec_type) )
+    cont_id    int,
+    entry_hash int,
+    PRIMARY KEY ( entry_hash)
 );
 
 
@@ -71,8 +74,8 @@ CREATE TABLE IF NOT EXISTS contract
     sec_id                            text,
     sec_id_type                       text,
     combo_legs_description            text,
-    combo_legs                        list<frozen<ComboLeg>>,
-    delta_neutral_contract            DeltaNeutralContract,
+    combo_legs                        list<frozen<combo_leg>>,
+    delta_neutral_contract            frozen<delta_neutral_contract>,
     market_name                       text,
     min_tick                          double,
     price_magnifier                   int,
@@ -91,7 +94,7 @@ CREATE TABLE IF NOT EXISTS contract
     ev_multiplier                     double,
     md_size_multiplier                int,
     agg_group                         int,
-    sec_id_list                       list<tuple<text, text>>,
+    sec_id_list                       list<frozen<seq_id>>,
     under_symbol                      text,
     under_sec_type                    text,
     market_rule_ids                   text,

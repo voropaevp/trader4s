@@ -65,7 +65,7 @@ class RequestDataProvider(
     session
   )
 
-  def createData(histData: RequestData): CompletionStage[Unit] = batch(
+  def createDataRequest(histData: RequestData): CompletionStage[Unit] = batch(
     Seq(
       preparedReqHistDataByProp
         .bind()

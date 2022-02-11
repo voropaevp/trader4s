@@ -1,10 +1,12 @@
 package model.datastax.ib.feed.codec
 import scala.reflect._
-import com.datastax.oss.driver.api.core.ProtocolVersion
+import com.datastax.oss.driver.api.core.{CqlSession, ProtocolVersion}
 import com.datastax.oss.driver.api.core.`type`.codec.registry.MutableCodecRegistry
 import com.datastax.oss.driver.api.core.`type`.codec.{ExtraTypeCodecs, TypeCodec, TypeCodecs}
 import com.datastax.oss.driver.api.core.`type`.reflect.GenericType
-import com.datastax.oss.driver.api.core.`type`.{DataTypes, DataType => DxDataType}
+import com.datastax.oss.driver.api.core.`type`.{DataTypes, UserDefinedType, DataType => DxDataType}
+
+import scala.jdk.OptionConverters._
 import model.datastax.ib.feed.ast._
 
 import java.nio.ByteBuffer
@@ -30,25 +32,29 @@ case class CqlStringToAstCodec[T: ClassTag](
 
 object CqlStringToAstCodec {
 
-  def registerAll(reg: MutableCodecRegistry): Unit =
-    astEncoders.foreach(reg.register)
+  def registerDerivedCodecs(session: CqlSession, ks: String): Unit = {
+    val reg = session.getContext.getCodecRegistry
+    val seqIdUdt: UserDefinedType =
+      session.getMetadata.getKeyspace(ks).flatMap(_.getUserDefinedType("seq_id")).get
+//    val seqIdCodec: TypeCodec[UserDefinedType]           = reg.codecFor(seqIdUdt)
+//    reg.asInstanceOf[MutableCodecRegistry].register(TypeCodecs.listOf(seqIdCodec))
+  }
 
-  lazy val DataTypeCodec: TypeCodec[DataType]     =  CqlStringToAstCodec(DataType.apply).asInstanceOf[TypeCodec[DataType]]
-  lazy val ReqStateCodec: TypeCodec[RequestState] =  CqlStringToAstCodec(RequestState.apply).asInstanceOf[TypeCodec[RequestState]]
-  lazy val ReqTypeCodec: TypeCodec[RequestType]   =  CqlStringToAstCodec(RequestType.apply).asInstanceOf[TypeCodec[RequestType]]
-  lazy val BarSizeCodec: TypeCodec[BarSize]       =  CqlStringToAstCodec(BarSize.apply).asInstanceOf[TypeCodec[BarSize]]
+  lazy val DataTypeCodec: TypeCodec[DataType]         = CqlStringToAstCodec(DataType.apply)
+  lazy val ReqStateCodec: TypeCodec[RequestState]     = CqlStringToAstCodec(RequestState.apply)
+  lazy val ReqTypeCodec: TypeCodec[RequestType]       = CqlStringToAstCodec(RequestType.apply)
+  lazy val BarSizeCodec: TypeCodec[BarSize]           = CqlStringToAstCodec(BarSize.apply)
+  lazy val ExchangeCodec: TypeCodec[Exchange]         = CqlStringToAstCodec(Exchange.apply)
+  lazy val SecurityTypeCodec: TypeCodec[SecurityType] = CqlStringToAstCodec(SecurityType.apply)
 
   lazy val astEncoders = Seq(
-    CqlStringToAstCodec(Exchange.apply),
-    ExtraTypeCodecs.optionalOf(TypeCodecs.INT),
-    ExtraTypeCodecs.optionalOf(TypeCodecs.ASCII),
-    ExtraTypeCodecs.optionalOf(TypeCodecs.DOUBLE),
-    ExtraTypeCodecs.optionalOf(TypeCodecs.TEXT),
+    ExchangeCodec,
     BarSizeCodec,
     DataTypeCodec,
     ReqStateCodec,
     ReqTypeCodec,
-    CqlStringToAstCodec(BarSize.apply),
-    CqlStringToAstCodec(SecurityType.apply)
+    SecurityTypeCodec,
+    ExtraTypeCodecs.optionalOf(ExchangeCodec),
+    ExtraTypeCodecs.optionalOf(TypeCodecs.TEXT)
   )
 }
