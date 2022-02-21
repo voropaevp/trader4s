@@ -118,3 +118,75 @@ CREATE TABLE IF NOT EXISTS contract
     notes                             text,
     primary key ( cont_id )
 );
+
+
+CREATE TABLE IF NOT EXISTS request_contract
+(
+    req_id                            uuid,
+    symbol                            text,
+    sec_type                          text,
+    last_trade_date_or_contract_month text,
+    strike                            double,
+    right                             text,
+    multiplier                        text,
+    exchange                          text,
+    currency                          text,
+    local_symbol                      text,
+    primary_exch                      text,
+    trading_class                     text,
+    include_expired                   boolean,
+    sec_id                            text,
+    sec_id_type                       text,
+    combo_legs_description            text,
+    combo_legs                        list<frozen<combo_leg>>,
+    delta_neutral_contract            frozen<delta_neutral_contract>,
+    state                             text,
+    PRIMARY KEY (req_id)
+);
+
+CREATE TABLE IF NOT EXISTS request_contract_by_entry_hash
+(
+    entry_hash int,
+    state      text,
+    req_id     uuid,
+    PRIMARY KEY ((entry_hash, state))
+);
+
+CREATE TABLE IF NOT EXISTS request_data
+(
+    req_id       uuid,
+    request_type text,
+    size         text,
+    cont_id      int,
+    data_type    text,
+    state        text,
+    start_time   timestamp,
+    end_time     timestamp,
+    PRIMARY KEY (req_id)
+);
+
+
+CREATE TABLE IF NOT EXISTS request_data_by_props
+(
+    req_id       uuid,
+    request_type text,
+    size         text,
+    cont_id      int,
+    data_type    text,
+    state        text,
+    start_time   timestamp,
+    create_time  timestamp,
+    PRIMARY KEY ((request_type, size, cont_id, data_type, state), start_time)
+);
+
+
+CREATE TABLE IF NOT EXISTS request_state_audit
+(
+    req_id        uuid,
+    create_time   timestamp,
+    state         text,
+    rows_received bigint,
+    error         text,
+    PRIMARY KEY ((req_id, state), create_time)
+);
+

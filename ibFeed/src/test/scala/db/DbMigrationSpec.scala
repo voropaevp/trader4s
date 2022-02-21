@@ -6,26 +6,26 @@ import db.DbSession._
 
 class DbMigrationSpec extends TestDbSpec {
 
-  val keyspace                    = "test"
-  override def beforeAll(): Unit  = flushKeyspace(keyspace)
-  override def afterAll(): Unit   = flushKeyspace(keyspace)
-  override def beforeEach(): Unit = flushKeyspace(keyspace)
 
   "Migration should " - {
 
     "Create the keyspace" in {
+      (flushKeyspace("test_mig_1_", "test") >>
       getFormattedContents(
-        keyspace,
+        "test_mig_1_",
+        "test",
         s"""SELECT
           |keyspace_name
           |FROM system_schema.keyspaces
-          |WHERE keyspace_name = '$testSchemaPrefix$keyspace'
+          |WHERE keyspace_name = 'test_mig_1_test'
           |""".stripMargin
-      ) === s"""[keyspace_name:'$testSchemaPrefix$keyspace']"""
+      )).unsafeRunSync() shouldBe s"""[keyspace_name:'test_mig_1_test']"""
     }
 
     "run the migrations" in {
-      getFormattedContents(keyspace, """SELECT test_id FROM test WHERE test_id = 1""") === "[test_id:1]"
+      (flushKeyspace("test_mig_1_", "test") >>
+        getFormattedContents("test_mig_1_","test","""SELECT test_id FROM test WHERE test_id = 1""")
+      ).unsafeRunSync()  shouldBe "[test_id:1]"
     }
   }
 }

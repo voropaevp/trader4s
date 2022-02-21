@@ -6,7 +6,7 @@ sealed trait RequestState extends Stringifiable
 
 object RequestState {
   def apply(s: String): RequestState = s match {
-    case "pending_id_assignment" => PendingId
+    case "pending_id" => PendingId
     case "in_queue"              => InQueue
     case "send_to_broker"        => SendToBroker
     case "rejected_by_broker"    => RejectedByBroker

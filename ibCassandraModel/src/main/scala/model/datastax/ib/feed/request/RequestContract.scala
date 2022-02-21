@@ -22,23 +22,23 @@ case class RequestContract(
   currency: Optional[String],
   localSymbol: Optional[String],
   tradingClass: Optional[String],
-  includeExpired: Optional[Boolean],
+  includeExpired: Boolean = false,
   comboLegs: JList[ComboLeg],
   primaryExch: Optional[Exchange],
   secIdType: Optional[String],
   secId: Optional[String],
   comboLegsDescription: Optional[String],
   deltaNeutralContract: DeltaNeutralContract,
-  state: RequestState                                         = RequestState.PendingId,
-  @(Computed @field)("writetime(symbol)") createTime: Instant = Instant.MIN,
-  @(Computed @field)("writetime(state)") updateTime: Instant  = Instant.MIN
+  state: RequestState                                      = RequestState.PendingId,
+  @(Computed @field)("writetime(symbol)") createTime: Long = 0,
+  @(Computed @field)("writetime(state)") updateTime: Long  = 0
 ) extends Request {
   @Transient val requestType: RequestType = RequestType.ContractDetails
 
   @Transient val asContractEntry: ContractEntry = ContractEntry(
     symbol                       = symbol,
     secType                      = secType,
-    strike                       = Option.when(strike == .0d)(strike),
+    strike                       = Option.when(strike > .000001)(strike),
     lastTradeDateOrContractMonth = lastTradeDateOrContractMonth.toScala,
     right                        = right.toScala,
     multiplier                   = multiplier.toScala,
@@ -46,7 +46,7 @@ case class RequestContract(
     currency                     = currency.toScala,
     localSymbol                  = localSymbol.toScala,
     tradingClass                 = tradingClass.toScala,
-    includeExpired               = includeExpired.toScala,
+    includeExpired               = Option.when(includeExpired)(includeExpired),
     comboLegs                    = Option(comboLegs).map(_.asScala.toList),
     primaryExch                  = primaryExch.toScala,
     secIdType                    = secIdType.toScala,
@@ -70,11 +70,12 @@ object RequestContract {
     currency                     = contractEntry.currency.toJava,
     localSymbol                  = contractEntry.localSymbol.toJava,
     tradingClass                 = contractEntry.tradingClass.toJava,
-    includeExpired               = contractEntry.includeExpired.toJava,
+    includeExpired               = contractEntry.includeExpired.getOrElse(false),
     comboLegs                    = contractEntry.comboLegs.map(legs => JList.of(legs: _*)).orNull,
     primaryExch                  = contractEntry.primaryExch.toJava,
     secIdType                    = contractEntry.secIdType.toJava,
     secId                        = contractEntry.secId.toJava,
+    state                        = RequestState.PendingId,
     comboLegsDescription         = contractEntry.comboLegsDescription.toJava,
     deltaNeutralContract         = contractEntry.deltaNeutralContract.orNull
   )

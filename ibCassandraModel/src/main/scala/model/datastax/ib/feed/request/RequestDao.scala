@@ -15,24 +15,23 @@ trait RequestDao {
   // Data
   // ---------------------------------------------------------------
 
-  @Query("""SELECT
-          req_id
-           ${keyspaceId}.request_data_by_props
-        requestType = :requestType
-        AND contId = :contId
-        AND dataType = :dataType
-        AND contId = :contId
-        AND startTime >= startTimeMin
-        AND startTime < startTimeMax
-        """)
+  @Select(customWhereClause = """request_type = :requestType
+            AND cont_id = :contId
+            AND data_type = :dataType
+            AND size = :size
+            AND state = :state
+            AND start_time >= :startTimeMin
+            AND start_time < :startTimeMax
+        """, orderBy = Array("start_time ASC"))
   def getIdDataByStartRange(
     @CqlName("requestType") reqType: RequestType,
     @CqlName("contId") contId: Int,
+    @CqlName("size") size: BarSize,
     @CqlName("dataType") dataType: DataType,
     @CqlName("state") state: RequestState,
     @CqlName("startTimeMin") startTimeMin: Instant,
     @CqlName("startTimeMax") startTimeMax: Instant
-  ): CompletionStage[MappedAsyncPagingIterable[UUID]]
+  ): CompletionStage[MappedAsyncPagingIterable[RequestDataByProps]]
 
   @Select
   def getDataById(id: UUID): CompletionStage[Optional[RequestData]]

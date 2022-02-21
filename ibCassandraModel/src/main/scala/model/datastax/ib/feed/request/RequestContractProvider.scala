@@ -4,7 +4,10 @@ import com.datastax.oss.driver.api.mapper.MapperContext
 import com.datastax.oss.driver.api.mapper.entity.EntityHelper
 import model.datastax.ib.Utils._
 import model.datastax.ib.feed.ast.RequestState
+
+import java.util.Optional
 import java.util.concurrent.CompletionStage
+import scala.jdk.OptionConverters.RichOption
 
 class RequestContractProvider(
   val context: MapperContext,
@@ -41,9 +44,10 @@ class RequestContractProvider(
         bind(
           preparedInsertState,
           RequestStateAudit(
-            reqId = contractReq.reqId,
-            state = newState,
-            error = error
+            reqId        = contractReq.reqId,
+            state        = newState,
+            error        = error.toJava,
+            rowsReceived = 0
           ),
           reqStateAuditByIdHelper
         )
@@ -63,8 +67,8 @@ class RequestContractProvider(
         RequestStateAudit(
           reqId        = contractReq.reqId,
           state        = contractReq.state,
-          rowsReceived = None,
-          error        = None
+          rowsReceived = 0,
+          error        = Optional.empty[String]()
         ),
         reqStateAuditByIdHelper
       ),

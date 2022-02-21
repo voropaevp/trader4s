@@ -4,29 +4,21 @@ import com.datastax.oss.driver.api.mapper.MapperContext
 import com.datastax.oss.driver.api.mapper.entity.EntityHelper
 import model.datastax.ib.Utils._
 import model.datastax.ib.feed.ast.RequestState
-import model.datastax.ib.feed.codec.CqlStringToAstCodec.{DataTypeCodec, ReqStateCodec, ReqTypeCodec}
 
-import java.util
-import java.util.UUID
+import java.util.Optional
 import java.util.concurrent.CompletionStage
+import scala.jdk.OptionConverters.RichOption
 
 class RequestDataProvider(
   val context: MapperContext,
-  val reqHistDataHelperByProp: EntityHelper[RequestDataByProps],
+  val reqHistDataHelperByPropHelper: EntityHelper[RequestDataByProps],
   val reqHistDataByIdHelper: EntityHelper[RequestData],
   val reqStateAuditByIdHelper: EntityHelper[RequestStateAudit]
 ) {
   private val session = context.getSession
 
-  private val preparedReqHistDataByProp = session.prepare(s"""UPDATE ${reqHistDataHelperByProp.getTableId}
-                                                             | SET req_id = req_id + :reqId,
-                                                             | req_type = ?,
-                                                             | cont_id = ?,
-                                                             | data_type = ?,
-                                                             | state = ?,
-                                                             | start_time = ?""".stripMargin)
-
-  private val preparedDeleteReqHistDataByProp = session.prepare(reqHistDataHelperByProp.deleteByPrimaryKey().asCql)
+  private val preparedUpdateReqHistDataByProp = prepareInsert(session, reqHistDataHelperByPropHelper)
+  private val preparedDeleteReqHistDataByProp = deleteByPrimaryKey(session, reqHistDataHelperByPropHelper)
   private val preparedReqHistDataById         = prepareInsert(session, reqHistDataByIdHelper)
   private val preparedInsertState             = prepareInsert(session, reqStateAuditByIdHelper)
 
@@ -34,30 +26,18 @@ class RequestDataProvider(
     histData: RequestData,
     newState: RequestState,
     rowsReceived: Option[Long] = None,
-    error: Option[String]     = None
+    error: Option[String]      = None
   ): CompletionStage[Unit] = batch(
     Seq(
-      bind(preparedDeleteReqHistDataByProp, histData.toProps, reqHistDataHelperByProp),
-      bind(preparedReqHistDataById, histData.copy(state = newState), reqHistDataByIdHelper),
-      preparedReqHistDataByProp
-        .bind()
-        .setSet("reqId", {
-          val s: util.Set[UUID] = new util.HashSet(1)
-          s.add(histData.reqId)
-          s
-        }, classOf[UUID])
-        .set(1, histData.requestType, ReqTypeCodec)
-        .setInt(2, histData.contId)
-        .set(3, histData.dataType, DataTypeCodec)
-        .set(4, histData.state, ReqStateCodec)
-        .setInstant(5, histData.startTime),
+      bind(preparedDeleteReqHistDataByProp, histData.toProps, reqHistDataHelperByPropHelper),
+      bind(preparedUpdateReqHistDataByProp, histData.toProps.copy(state = newState), reqHistDataHelperByPropHelper),
       bind(
         preparedInsertState,
         RequestStateAudit(
           reqId        = histData.reqId,
           state        = newState,
-          rowsReceived = rowsReceived,
-          error        = error
+          rowsReceived = rowsReceived.getOrElse(0),
+          error        = error.toJava
         ),
         reqStateAuditByIdHelper
       )
@@ -67,21 +47,14 @@ class RequestDataProvider(
 
   def createDataRequest(histData: RequestData): CompletionStage[Unit] = batch(
     Seq(
-      preparedReqHistDataByProp
-        .bind()
-        .setUuid(0, histData.reqId)
-        .set(1, histData.requestType, ReqTypeCodec)
-        .setInt(2, histData.contId)
-        .set(3, histData.dataType, DataTypeCodec)
-        .set(4, histData.state, ReqStateCodec)
-        .setInstant(5, histData.startTime),
+      bind(preparedUpdateReqHistDataByProp, histData.toProps, reqHistDataHelperByPropHelper),
       bind(
         preparedInsertState,
         RequestStateAudit(
           reqId        = histData.reqId,
           state        = histData.state,
-          rowsReceived = None,
-          error        = None
+          rowsReceived = 0,
+          error        = Optional.empty[String]()
         ),
         reqStateAuditByIdHelper
       ),

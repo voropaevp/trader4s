@@ -43,7 +43,7 @@ def runCommand(command: String, message: => String, log: Logger): Unit = {
 }
 
 lazy val ibCassandraModel = project
-  .settings(moduleName := "cat-trader-cassandra-model")
+  .settings(moduleName := "cat-trader-cassandra-dao")
   .settings(allSettings)
   .settings(
     Compile / unmanagedJars += file("/Users/pavel.voropaev/IdeaProjects/mltrader/thirdPartyJars/ibkr/ApiDemo.jar"),

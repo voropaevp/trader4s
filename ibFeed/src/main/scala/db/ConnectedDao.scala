@@ -1,11 +1,13 @@
 package db
 
+import cats.{MonadError, MonadThrow}
 import cats.data.OptionT
 import model.datastax.ib.feed.response.contract.ContractEntry
 
 import java.util.Optional
 import cats.syntax.applicative._
 import cats.syntax.option._
+import cats.syntax.flatMap._
 import cats.syntax.semigroupal._
 import cats.syntax.functor._
 import cats.effect.{Async, Resource}
@@ -17,6 +19,8 @@ import model.datastax.ib.feed.request._
 import model.datastax.ib.feed.response.contract.{Contract, ContractDao}
 import model.datastax.ib.feed.response.data.{Bar, BarDao}
 import model.datastax.ib.feed.{FeedMapper, FeedMapperBuilder}
+import org.typelevel.log4cats.{Logger, SelfAwareStructuredLogger}
+import org.typelevel.log4cats.slf4j.Slf4jLogger
 
 import java.time.Instant
 import java.util.UUID
@@ -59,12 +63,13 @@ object ConnectedDao {
       reqType: RequestType,
       dataType: DataType,
       state: RequestState,
+      size: BarSize,
       contId: Int,
       startTimeMin: Instant,
       startTimeMax: Instant
-    ): Stream[F, UUID]
+    ): Stream[F, RequestData]
 
-    def getByContractEntryState(
+    def getContractEntryState(
       entry: ContractEntry,
       state: RequestState = RequestState.PendingId
     ): F[Option[RequestContract]]
@@ -129,9 +134,10 @@ object ConnectedDao {
         lazy val mapperMeta: FeedMapper =
           new FeedMapperBuilder(metaSession).withDefaultKeyspace(s"${schemaPrefix}meta").build()
 
-        lazy val barDao: BarDao           = mapperData.BarDao()
-        lazy val requestDao: RequestDao   = mapperMeta.RequestDao()
-        lazy val contractDao: ContractDao = mapperMeta.ContractDao()
+        lazy val barDao: BarDao                                 = mapperData.BarDao()
+        lazy val requestDao: RequestDao                         = mapperMeta.RequestDao()
+        lazy val contractDao: ContractDao                       = mapperMeta.ContractDao()
+        implicit def unsafeLogger: SelfAwareStructuredLogger[F] = Slf4jLogger.getLogger[F]
 
         val barDaoConnected = new BarDaoConnected[F] {
 
@@ -174,13 +180,23 @@ object ConnectedDao {
             reqType: RequestType,
             dataType: DataType,
             state: RequestState,
+            size: BarSize,
             contId: Int,
             startTimeMin: Instant,
             startTimeMax: Instant
-          ): Stream[F, UUID] =
-            liftStream(requestDao.getIdDataByStartRange(reqType, contId, dataType, state, startTimeMin, startTimeMax))
+          ): Stream[F, RequestData] =
+            liftStream(
+              requestDao.getIdDataByStartRange(reqType, contId, size, dataType, state, startTimeMin, startTimeMax)
+            ).evalMap(requestDataByProps => getReqDataById(requestDataByProps.reqId)).evalMap {
+              case None =>
+                Async[F].raiseError[RequestData](DbError(s"""Corrupted cassandra state. Record in request_data_by_props in range of (
+                                               |$reqType, $contId, $size, $dataType, 
+                                               |$state, $startTimeMin, $startTimeMax
+                                               |) referred to none existent request id""".stripMargin))
+              case Some(value) => value.pure[F]
+            }
 
-          def getByContractEntryState(
+          def getContractEntryState(
             e: ContractEntry,
             state: RequestState
           ): F[Option[RequestContract]] =
@@ -203,11 +219,11 @@ object ConnectedDao {
           override def create(contract: Contract): F[Unit] = liftF(contractDao.create(contract))
 
           override def getByContractEntry(entry: ContractEntry): F[Option[Contract]] =
-            OptionT(liftFOption(
-              contractDao.getByEntryHash(entry.hashCode())
-            ))
-              .flatMap(s => OptionT(get(s.contId)))
-              .value
+            OptionT(
+              liftFOption(
+                contractDao.getByEntryHash(entry.hashCode())
+              )
+            ).flatMap(s => OptionT(get(s.contId))).value
 
         }
 

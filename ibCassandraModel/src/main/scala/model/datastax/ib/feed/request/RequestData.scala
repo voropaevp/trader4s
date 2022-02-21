@@ -8,24 +8,26 @@ import java.util.UUID
 import scala.annotation.meta.field
 @Entity
 case class RequestData(
-  @(PartitionKey @field)(1) reqId: UUID,
+  @(PartitionKey @field) reqId: UUID = UUID.randomUUID(),
   requestType: RequestType,
   size: BarSize,
   contId: Int,
   dataType: DataType,
-  state: RequestState = RequestState.PendingId,
+  state: RequestState,
   startTime: Instant,
   endTime: Instant,
-  @(Computed @field)("writetime(reqId)") createTime: Instant = Instant.MIN,
-  @(Computed @field)("writetime(state)") updateTime: Instant = Instant.MIN
+  @(Computed @field)("writetime(cont_id)") createTime: Long = 0,
+  @(Computed @field)("writetime(state)") updateTime: Long   = 0
 ) extends Request {
   @Transient lazy val toProps: RequestDataByProps =
     RequestDataByProps(
-      reqType   = this.requestType,
-      contId    = this.contId,
-      dataType  = this.dataType,
-      state     = this.state,
-      startTime = this.startTime,
-      reqId     = Set(this.reqId)
+      requestType = this.requestType,
+      contId      = this.contId,
+      size        = this.size,
+      dataType    = this.dataType,
+      state       = this.state,
+      startTime   = this.startTime,
+      reqId       = this.reqId,
+      createTime  = Instant.ofEpochMilli(this.updateTime)
     )
 }

@@ -185,7 +185,6 @@ case class Contract(
   //  sizeIncrement: Optional[BigDecimal],
   //    Order's suggested size increment.
   //  suggestedSizeIncrement: Optional[BigDecimal]
-//  @(Computed @field)("writetime(symbol)") updateTime: Int = 0
 ) extends Response {
 
   @Transient
