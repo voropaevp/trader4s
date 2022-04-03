@@ -16,6 +16,7 @@ import scala.concurrent.duration._
 class Limits[F[_]: Async: Temporal: Clock: Logger](
   limit10Min: Hist10MinLimit[F],
   subLimit: SubLimit[F],
+  clientMessageLimit: ClientMessageLimit[F],
   contractSizeLimit: SameContractSizeLimit[F]
 ) {
 
@@ -39,6 +40,39 @@ object Limits {
     def acquire(request: Request): F[Unit]
 
     def release(request: Request): F[Unit]
+  }
+
+  class ClientMessageLimit[F[_]: Async](
+    msgTs: Ref[F, Set[FiniteDuration]],
+    clntMsgLock: Semaphore[F],
+    mainLock: Semaphore[F]
+  ) extends Limit[F] {
+    override def refresh: F[Unit] =
+      mainLock
+        .permit
+        .use(_ =>
+          for {
+            now      <- Clock[F].realTime
+            initSize <- msgTs.get.map(_.size)
+            nextSize <- msgTs.updateAndGet(_.filter(_ < now - 1.minutes)).map(_.size)
+            _ <- if (initSize > nextSize)
+              clntMsgLock.releaseN(initSize - nextSize)
+            else
+              ().pure[F]
+          } yield ()
+        )
+
+    override def acquire(request: Request): F[Unit] =
+      for {
+        _ <- request match {
+          case _: RequestData => clntMsgLock.acquire
+          case _              => ().pure[F]
+        }
+        now <- Clock[F].realTime
+        _   <- mainLock.permit.use(_ => msgTs.update(_ + now))
+      } yield ()
+
+    override def release(request: Request): F[Unit] = ().pure[F]
   }
 
   class Hist10MinLimit[F[_]: Async](
@@ -152,16 +186,23 @@ object Limits {
       hist10MinLock      <- Resource.eval(Semaphore[F](lim.hist10MinLimit))
       reqByContSizeLocks <- Resource.eval(Ref[F].of(Map.empty[(Int, BarSize), (Set[FiniteDuration], Semaphore[F])]))
       hist10MinMainLock  <- Resource.eval(Semaphore[F](1))
+      msgLimitMainLock   <- Resource.eval(Semaphore[F](1))
+      msgLimit           <- Resource.eval(Ref[F].of(Set.empty[FiniteDuration]))
+      msgLimitLock       <- Resource.eval(Semaphore[F](lim.clientMsgLimit))
       concurrentSubsLock <- Resource.eval(Semaphore[F](lim.concurrentSubLimit))
+
       contractSizeLimit = new SameContractSizeLimit(lim.sameContractAndSizeLimit, reqByContSizeLocks)
       subLimit          = new SubLimit(concurrentSubsLock)
       limit10Min        = new Hist10MinLimit(hist10Min, hist10MinLock, hist10MinMainLock)
+      clientMsgLimit    = new ClientMessageLimit(msgLimit, msgLimitLock, msgLimitMainLock)
       _ <- contractSizeLimit.refresh.foreverM.background.void
       _ <- subLimit.refresh.foreverM.background.void
       _ <- limit10Min.refresh.foreverM.background.void
+      _ <- clientMsgLimit.refresh.foreverM.background.void
     } yield new Limits(
-      contractSizeLimit = contractSizeLimit,
-      subLimit          = subLimit,
-      limit10Min        = limit10Min
+      contractSizeLimit  = contractSizeLimit,
+      subLimit           = subLimit,
+      limit10Min         = limit10Min,
+      clientMessageLimit = clientMsgLimit
     )
 }

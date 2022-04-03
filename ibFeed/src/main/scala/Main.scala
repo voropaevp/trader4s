@@ -5,7 +5,7 @@ import interpreter.ib.feed.IbFeed
 import org.typelevel.log4cats.SelfAwareStructuredLogger
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 
-object main extends IOApp.Simple {
+object Main extends IOApp.Simple {
 
   implicit def unsafeLogger: SelfAwareStructuredLogger[IO] = Slf4jLogger.getLogger[IO]
 
@@ -15,7 +15,8 @@ object main extends IOApp.Simple {
         implicit val (contractDaoConnected, requestDaoConnected, barDaoConnected) = db
         IbFeed[IO](appConfig.broker).use { ibFeed =>
           implicit val feed: FeedAlgebra[IO] = ibFeed
-          ContractFetchStrategy.run[IO](appConfig.watchList.map(_.contractEntry).head)
+          ContractFetchStrategy.run[IO](appConfig.watchList.map(_.contractEntry).head) >>
+          IO.println("sss")
         }
       }
     }

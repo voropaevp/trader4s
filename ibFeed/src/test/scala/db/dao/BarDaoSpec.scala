@@ -2,6 +2,7 @@ package db.dao
 
 import cats.effect.IO
 import cats.syntax.traverse._
+import cats.syntax.parallel._
 import cats.effect.unsafe.implicits.global
 import db.ConnectedDao.BarDaoConnected
 import db.{ConnectedDao, TestDbSpec}
@@ -11,6 +12,14 @@ import model.datastax.ib.feed.response.data.Bar
 import java.time.Instant
 
 class BarDaoSpec extends TestDbSpec {
+
+  override def afterAll(): Unit =
+    (
+      flushKeyspace("test_bar_dao_1_", "data"),
+      flushKeyspace("test_bar_dao_2_", "data"),
+      flushKeyspace("test_bar_dao_3_", "data")
+    ).parTupled.unsafeRunAndForget()
+
 
   import BarDaoSpec._
 
@@ -55,7 +64,7 @@ class BarDaoSpec extends TestDbSpec {
             .void >> BarDaoConnected[IO]
             .get(1, BarSize.Day1, DataType.Bid, mockTs, mockTs.plusSeconds(10001), 11000)
             .zipWithIndex
-            .debug(o => s"a: $o")
+//            .debug(o => s"a: $o")
             .compile
             .lastOrError
       }).unsafeRunSync() should ===(mockBar, 9999) // -1 because of element 0

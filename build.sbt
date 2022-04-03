@@ -127,6 +127,7 @@ lazy val ibFeed = project
       Dependencies.Libraries.fs2rx,
       Dependencies.Libraries.fs2core,
       Dependencies.Libraries.scalatest,
+      Dependencies.Libraries.ceTestKit,
       Dependencies.Libraries.ceTesting,
       Dependencies.Libraries.scalactic
     )

@@ -15,6 +15,7 @@ import scala.concurrent.duration.FiniteDuration
 package object config {
 
   case class LimitsConfig(
+    clientMsgLimit: Int,
     concurrentSubLimit: Int,
     hist10MinLimit: Int,
     sameContractAndSizeLimit: Int
@@ -23,13 +24,13 @@ package object config {
   case class WatchEntry(
     contractEntry: ContractEntry,
     dataType: DataType,
-    size: BarSize,
-    syncInterval: FiniteDuration
+    size: BarSize
   )
 
-  implicit val myDataTypeReader: ConfigReader[DataType] = ConfigReader[String].map(DataType.apply)
-  implicit val myBarSizeReader: ConfigReader[BarSize]   = ConfigReader[String].map(BarSize.apply)
-  implicit val myExchReader: ConfigReader[Exchange]     = ConfigReader[String].map(Exchange.apply)
+  implicit val myDataTypeReader: ConfigReader[DataType]  = ConfigReader[String].map(DataType.apply)
+  implicit val myBarSizeReader: ConfigReader[BarSize]    = ConfigReader[String].map(BarSize.apply)
+  implicit val secTypeReader: ConfigReader[SecurityType] = ConfigReader[String].map(SecurityType.apply)
+  implicit val myExchReader: ConfigReader[Exchange]      = ConfigReader[String].map(Exchange.apply)
 
   case class BrokerSettings(
     ip: String,

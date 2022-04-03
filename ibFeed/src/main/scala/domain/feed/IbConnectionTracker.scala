@@ -1,19 +1,20 @@
 package domain.feed
 
-import cats.Monad
+import cats.{Monad, NonEmptyParallel, Parallel}
 import fs2._
 import cats.data.EitherT
 import cats.effect._
 import cats.effect.std.Semaphore
 import cats.syntax.all._
 import domain.feed.FeedException.{IbReqError, RequestTimeout}
-import fs2.{INothing, Pipe, Pull}
+import fs2.{Pipe, Pull}
 import model.datastax.ib.feed.ast.RequestType
-import model.datastax.ib.feed.request.{Request, RequestContract, RequestData}
+import model.datastax.ib.feed.request.{Request,  RequestData}
 
 import scala.concurrent.duration.{DurationInt, FiniteDuration}
 
-class IbConnectionTracker[F[_]: Async: Clock](
+class IbConnectionTracker[F[_]: Async: Clock: NonEmptyParallel](
+  streamTimeout: FiniteDuration,
   connectionError: Ref[F, (FiniteDuration, Boolean)],
   histDataFarmError: Ref[F, (FiniteDuration, Boolean)],
   marketDataFarmError: Ref[F, (FiniteDuration, Boolean)]
@@ -29,15 +30,15 @@ class IbConnectionTracker[F[_]: Async: Clock](
           def go(
             timedPull: Pull.Timed[F, Either[FeedException, AnyRef]]
           ): Pull[F, Either[FeedException, AnyRef], Unit] =
-            timedPull.timeout(450.millis) >> // starts new timeout and stops the previous one
+            timedPull.timeout(streamTimeout) >> // starts new timeout and stops the previous one
               timedPull.uncons.flatMap {
                 case Some((Right(elems), next)) =>
                   Pull.output(elems) >>
                     go(next)
                 case Some((Left(_), next)) =>
-                  Pull.eval(Clock[F].realTime).flatMap(now => Pull.eval(isErrorSinceOrBlock(request)(now))).flatMap {
+                  Pull.eval(Clock[F].realTime).flatMap(now => Pull.eval(isCausedByBrokerError(request, now))).flatMap {
                     case true  => go(next)
-                    case false => Pull.output(Chunk(RequestTimeout(450.millis).asLeft[AnyRef])) >> Pull.done
+                    case false => Pull.output(Chunk(RequestTimeout(streamTimeout).asLeft[AnyRef])) >> Pull.done
                   }
                 case None => Pull.done
               }
@@ -64,24 +65,55 @@ class IbConnectionTracker[F[_]: Async: Clock](
     }
   }
 
-  def isErrorSinceOrBlock(req: Request)(start: FiniteDuration): F[Boolean] =
-    connectionError.get.flatMap {
-      case (lastTs, isError) =>
+
+  def isCausedByHistoricFarmError(tsOfTimeout: FiniteDuration): F[Boolean] =
+    histDataFarmError.get.flatMap {
+      case (modifiedTs, isError) =>
         if (isError)
-          Temporal[F].sleep(500.millis) *> isErrorSinceOrBlock(req)(start)
+          Temporal[F].sleep(500.millis) *> isCausedByHistoricFarmError(tsOfTimeout)
         else
-          (lastTs < start).pure[F]
+          (tsOfTimeout - modifiedTs < streamTimeout).pure[F]
+    }
+
+
+    def isCausedBySubscriptionFarmError(tsOfTimeout: FiniteDuration): F[Boolean] =
+      marketDataFarmError.get.flatMap {
+      case (modifiedTs, isError) =>
+        if (isError)
+          Temporal[F].sleep(500.millis) *> isCausedBySubscriptionFarmError(tsOfTimeout)
+        else
+          (tsOfTimeout - modifiedTs < streamTimeout).pure[F]
+    }
+
+
+    def isCausedByConnectionError(tsOfTimeout: FiniteDuration): F[Boolean] =
+    connectionError.get.flatMap {
+      case (modifiedTs, isError) =>
+        if (isError)
+          Temporal[F].sleep(500.millis) *> isCausedByConnectionError(tsOfTimeout)
+        else
+          (tsOfTimeout - modifiedTs < streamTimeout).pure[F]
+    }
+
+  // Checks if connection had broken when timeout was reached. Blocks indefinitely until connection is restored.
+  def isCausedByBrokerError(request: Request, tsOfTimeout: FiniteDuration): F[Boolean] = request match {
+      case r : RequestData if r.requestType == RequestType.Historic  =>
+        (isCausedByConnectionError(tsOfTimeout), isCausedByHistoricFarmError(tsOfTimeout)).parMapN(_ && _)
+      case r : RequestData if r.requestType == RequestType.Subscription  =>
+        (isCausedByConnectionError(tsOfTimeout), isCausedBySubscriptionFarmError(tsOfTimeout)).parMapN(_ && _)
+      case _ => isCausedByConnectionError(tsOfTimeout)
     }
 }
 
 object IbConnectionTracker {
-  def build[F[_]: Async: Clock]: F[IbConnectionTracker[F]] =
+  def build[F[_]: Async: Clock: NonEmptyParallel](streamTimeout: FiniteDuration): F[IbConnectionTracker[F]] =
     for {
       now                 <- Clock[F].realTime
       connectionError     <- Ref.of((now, true))
       histDataFarmError   <- Ref.of((now, true))
       marketDataFarmError <- Ref.of((now, true))
     } yield new IbConnectionTracker(
+      streamTimeout       = streamTimeout,
       connectionError     = connectionError,
       histDataFarmError   = histDataFarmError,
       marketDataFarmError = marketDataFarmError

@@ -234,8 +234,10 @@ class IbFeedWrapper[F[_]: Async](feedRequests: FeedRequestService[F]) extends EW
   override def error(i: Int, code: Int, s: String): Unit = i match {
     case -1 =>
       code match {
-        case x if List(502, 504).contains(x) => feedRequests.errorOne(i, IbReqError(code, s"[$code] [$s]"))
-        case _                               => logger.warn(s"Notification with error code [$code] [$s]")
+        case x if List(502, 503, 504).contains(x) =>
+          logger.error(s"Couldn't connect to the TWS error code [$s]")
+          feedRequests.errorAll(IbReqError(code, s"[$code] [$s]"))
+        case _ => logger.warn(s"Notification with error code [$code] [$s]")
       }
     case _ => feedRequests.errorOne(i, IbReqError(code, s"[$code] [$s]"))
   }

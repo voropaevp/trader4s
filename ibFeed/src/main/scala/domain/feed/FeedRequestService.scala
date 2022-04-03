@@ -1,6 +1,6 @@
 package domain.feed
 
-import cats.{MonadError, MonadThrow}
+import cats.{MonadError, MonadThrow, NonEmptyParallel}
 import fs2.Stream
 import cats.effect.{Async, Clock, Ref, Resource, Sync, Temporal}
 import cats.effect.std.{Dispatcher, Queue}
@@ -18,6 +18,7 @@ import com.ib.client.{Bar => IbBar, ContractDetails => IbContractDetails}
 import config._
 
 import scala.collection.immutable.SortedMap
+import scala.concurrent.duration.FiniteDuration
 
 class FeedRequestService[F[_]: Async: Temporal: Clock: Logger: BarDaoConnected: RequestDaoConnected: ContractDaoConnected](
   queuedReq: Ref[F, SortedMap[Int, Queue[F, Option[Either[FeedException, AnyRef]]]]],
@@ -50,6 +51,7 @@ class FeedRequestService[F[_]: Async: Temporal: Clock: Logger: BarDaoConnected: 
       .map(_._2)
       .flatMap(Stream.fromQueueNoneTerminated(_).through(ibConnectionTracker.setTimeout(request)))
       .zipWithIndex
+      .debug()
       .evalMap {
         case (either, count) =>
           either match {
@@ -98,12 +100,12 @@ class FeedRequestService[F[_]: Async: Temporal: Clock: Logger: BarDaoConnected: 
       .get
       .flatMap(_.get(id) match {
         case Some(req) => req.offer(ex.asLeft[AnyRef].some)
-        case None      => errorAllF(CriticalFeedError(s"Rogue request Id [$id] failed"))
+        case None      => errorAllF(CriticalFeedError(s"Rogue request Id [$id] failed", cause = ex))
       })
 
   def errorAllF(ex: FeedException): F[Unit] =
     for {
-      _       <- Logger[F].error(s"Shutting down all request due to [$ex]")
+      _       <- Logger[F].error(s"Shutting down all request due to [${ex.message}]")
       content <- queuedReq.get
       _       <- content.values.toList.traverse(_.offer(ex.asLeft[AnyRef].some))
     } yield ()
@@ -125,8 +127,9 @@ object FeedRequestService {
 
   implicit def unsafeLogger[F[_]: Sync]: SelfAwareStructuredLogger[F] = Slf4jLogger.getLogger[F]
 
-  def make[F[_]: Async: Temporal: Clock: BarDaoConnected: RequestDaoConnected: ContractDaoConnected](
-    limitsConfig: LimitsConfig
+  def make[F[_]: Async: NonEmptyParallel: Temporal: Clock: BarDaoConnected: RequestDaoConnected: ContractDaoConnected](
+    limitsConfig: LimitsConfig,
+    streamTimeout: FiniteDuration
   ): Resource[F, FeedRequestService[F]] =
     for {
       dsp    <- Dispatcher[F]
@@ -135,7 +138,7 @@ object FeedRequestService {
         for {
           queuedReq                <- Ref[F].of(SortedMap.empty[Int, Queue[F, Option[Either[FeedException, AnyRef]]]])
           startReceive             <- Ref[F].of(Set.empty[Int])
-          ibConnectionErrorHistory <- IbConnectionTracker.build[F]
+          ibConnectionErrorHistory <- IbConnectionTracker.build[F](streamTimeout)
         } yield new FeedRequestService(
           queuedReq           = queuedReq,
           limits              = limits,

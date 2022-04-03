@@ -1,5 +1,6 @@
 package interpreter.ib.feed
 
+import cats.NonEmptyParallel
 import fs2._
 import cats.syntax.all._
 import cats.effect.syntax.all._
@@ -18,6 +19,7 @@ import model.datastax.ib.feed.response.data.Bar
 import org.typelevel.log4cats.slf4j.Slf4jLogger
 import org.typelevel.log4cats.{Logger, SelfAwareStructuredLogger}
 import utils.ExecutionContexts
+
 import scala.concurrent.duration.DurationInt
 
 class IbFeed[F[_]: Async: FeedRequestService: RequestDaoConnected: ContractDaoConnected] extends FeedAlgebra[F] {
@@ -50,12 +52,13 @@ class IbFeed[F[_]: Async: FeedRequestService: RequestDaoConnected: ContractDaoCo
 object IbFeed {
   implicit def unsafeLogger[F[_]: Sync]: SelfAwareStructuredLogger[F] = Slf4jLogger.getLogger[F]
 
-  def apply[F[_]: Async: Clock: Temporal: RequestDaoConnected: ContractDaoConnected: BarDaoConnected](
+  def apply[F[_]: Async: Clock: NonEmptyParallel: Temporal: RequestDaoConnected: ContractDaoConnected: BarDaoConnected](
     brokerSetting: BrokerSettings
   ): Resource[F, IbFeed[F]] =
     for {
-      implicit0(feedReqService: FeedRequestService[F]) <- FeedRequestService.make[F](brokerSetting.limits)
-      eWrapper                                         <- IbFeedWrapper[F](feedReqService)
+      implicit0(feedReqService: FeedRequestService[F]) <- FeedRequestService
+        .make[F](brokerSetting.limits, brokerSetting.requestTimeout)
+      eWrapper <- IbFeedWrapper[F](feedReqService)
       (client, reader, readerSignal) <- Resource.eval(
         Logger[F].info("Making ib pieces") *>
           Sync[F].delay {
@@ -80,16 +83,16 @@ object IbFeed {
             readerSignal.waitForSignal()
             Either.catchNonFatal[Unit](reader.processMsgs())
           } else
-            FeedShutdown.asLeft[Unit]
+            GatewayInactive.asLeft[Unit]
         }
         .flatMap {
-          case Left(ex) if ex == FeedShutdown => Temporal[F].sleep(50.millis).as(Option.empty[Unit])
-          case Left(ex)                       => Logger[F].error(s"Ibkr reader exception ${ex.getMessage}").as(Option[Unit](()))
-          case Right(_)                       => Sync[F].pure(Option.empty[Unit])
+          case Left(ex) if ex == GatewayInactive => Temporal[F].sleep(50.millis).as(Option.empty[Unit])
+          case Left(ex)                          => Logger[F].error(s"Ibkr reader exception ${ex.getMessage}").as(Option[Unit](()))
+          case Right(_)                          => Sync[F].pure(Option.empty[Unit])
         }
         .untilDefinedM
         .background
-      r <- Resource.make(
+      feed <- Resource.make(
         Logger[F].info("Made the IbkrFeed service") *> Sync[F].delay(new IbFeed[F])
       )(_ =>
         Logger[F].info("Shutting down the IbkrFeed service") *>
@@ -98,5 +101,5 @@ object IbFeed {
             //          readerSignal.issueSignal()
           }
       )
-    } yield r
+    } yield feed
 }

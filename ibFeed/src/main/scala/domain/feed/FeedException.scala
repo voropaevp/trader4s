@@ -25,6 +25,10 @@ object FeedException {
     override def message: String = s"Feed is shutting down"
   }
 
+  case object GatewayInactive extends FeedException {
+    override def message: String = s"TWS gateway is not connected"
+  }
+
   case class CriticalFeedError(message: String = "", private val cause: Throwable = None.orNull)
       extends Error(message, cause)
       with FeedException

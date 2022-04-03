@@ -5,10 +5,17 @@ import cats.effect.IO
 import cats.effect.unsafe.implicits.global
 import db.ConnectedDao.ContractDaoConnected
 import db.{ConnectedDao, TestDbSpec}
+import mocks.RequestMocks
 
-class ContractDaoSpec extends TestDbSpec {
+class ContractDaoSpec extends TestDbSpec with RequestMocks {
 
   import ContractDaoSpec._
+
+  override def afterAll(): Unit =
+    (
+      flushKeyspace("test_cont_dao_1_", "meta"),
+      flushKeyspace("test_cont_dao_2_", "meta")
+      ).parTupled.unsafeRunAndForget()
 
   "Create the meta keyspace" in {
     (flushKeyspace("test_cont_dao_1_", "meta") >>
@@ -28,7 +35,7 @@ class ContractDaoSpec extends TestDbSpec {
   }
 
   "Be able to insert raw the get it by id and contract entry" in {
-    val result = (flushKeyspace("test_cont_dao_3_", "meta") >> ConnectedDao.initWithPrefix[IO]("test_cont_dao_2_").use {
+    val result = (flushKeyspace("test_cont_dao_2_", "meta") >> ConnectedDao.initWithPrefix[IO]("test_cont_dao_2_").use {
       case (a, b, c) =>
         implicit val (_a, _b, _c) = (a, b, c)
         ContractDaoConnected[IO].create(mockContract) >>

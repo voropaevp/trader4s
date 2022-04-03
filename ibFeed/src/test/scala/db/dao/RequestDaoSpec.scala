@@ -5,9 +5,18 @@ import cats.effect.IO
 import cats.effect.unsafe.implicits.global
 import db.ConnectedDao.RequestDaoConnected
 import db.{ConnectedDao, TestDbSpec}
+import mocks.RequestMocks
 import model.datastax.ib.feed.ast._
 
-class RequestDaoSpec extends TestDbSpec {
+class RequestDaoSpec extends TestDbSpec with RequestMocks {
+
+  override def afterAll(): Unit =
+    (
+      flushKeyspace("test_req_dao_1_", "meta"),
+      flushKeyspace("test_req_dao_2_", "meta"),
+      flushKeyspace("test_req_dao_3_", "meta"),
+      flushKeyspace("test_req_dao_4_", "meta")
+    ).parTupled.unsafeRunAndForget()
 
   "Hash of contract request should be the same as original entry" in {
     mockContractReq.asContractEntry shouldBe mockContractEntry
@@ -86,8 +95,8 @@ class RequestDaoSpec extends TestDbSpec {
   }
 
   "Be able to change request state and log that in audit table" in {
-    (flushKeyspace("test_req_dao_3_", "meta") >>
-      ConnectedDao.initWithPrefix[IO]("test_req_dao_3_").use {
+    (flushKeyspace("test_req_dao_4_", "meta") >>
+      ConnectedDao.initWithPrefix[IO]("test_req_dao_4_").use {
         case (a, b, c) =>
           implicit val (_a, _b, _c) = (a, b, c)
           RequestDaoConnected[IO].create(mockDataReqHist) >>

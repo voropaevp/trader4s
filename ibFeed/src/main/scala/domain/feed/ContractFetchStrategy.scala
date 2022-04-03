@@ -15,6 +15,9 @@ object ContractFetchStrategy {
     entry: ContractEntry
   ): F[Unit] = ContractDaoConnected[F].getByContractEntry(entry).flatMap {
     case Some(contract) => Logger[F].info(contract.toString)
-    case None           => FeedAlgebra[F].requestContractDetails(RequestContract(entry)).compile.drain
+    case None           => FeedAlgebra[F].requestContractDetails(RequestContract(entry)).compile
+      .lastOrError
+      .map(println)
+      .void
   }
 }

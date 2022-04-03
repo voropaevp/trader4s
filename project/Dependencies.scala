@@ -10,6 +10,7 @@ object Dependencies {
     val fs2                 = "3.2.4"
     val test                = "3.2.9"
     val CEtest              = "1.4.0"
+    val ceTestKit           = "3.3.9"
 
     val cassandraCore = "4.0.0"
     val logback       = "1.2.10"
@@ -49,9 +50,10 @@ object Dependencies {
     val circeParser  = "io.circe" %% "circe-parser"  % V.circe
 
     // testing
-    val scalactic = "org.scalactic" %% "scalactic"                     % V.test   % Test
-    val scalatest = "org.scalatest" %% "scalatest"                     % V.test   % Test
-    val ceTesting = "org.typelevel" %% "cats-effect-testing-scalatest" % V.CEtest % Test
+    val scalactic = "org.scalactic" %% "scalactic"                     % V.test      % Test
+    val scalatest = "org.scalatest" %% "scalatest"                     % V.test      % Test
+    val ceTesting = "org.typelevel" %% "cats-effect-testing-scalatest" % V.CEtest    % Test
+    val ceTestKit = "org.typelevel" %% "cats-effect-testkit"           % V.ceTestKit % Test
   }
 
 }
