@@ -22,6 +22,16 @@ trait RequestMocks {
     endTime     = Instant.parse("2022-02-13T20:30:30.00Z")
   )
 
+  lazy val mockDataReqSub: RequestData = RequestData(
+    requestType = RequestType.Subscription,
+    size        = BarSize.Day1,
+    contId      = 0,
+    state       = RequestState.PendingId,
+    dataType    = DataType.Midpoint,
+    startTime   = Instant.parse("2022-02-10T20:30:30.00Z"),
+    endTime     = Instant.parse("2022-02-13T20:30:30.00Z")
+  )
+
   lazy val mockComboLeg: ComboLeg = ComboLeg(
     contId = 0,
     //Select the relative number of contracts for the leg you are constructing. To help determine the ratio for a specific combination order, refer to the Interactive Analytics section of the User's Guide.

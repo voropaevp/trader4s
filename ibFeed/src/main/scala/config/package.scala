@@ -16,9 +16,12 @@ package object config {
 
   case class LimitsConfig(
     clientMsgLimit: Int,
+    clientMsgDuration: FiniteDuration,
     concurrentSubLimit: Int,
     hist10MinLimit: Int,
-    sameContractAndSizeLimit: Int
+    hist10MinDuration: FiniteDuration,
+    sameContractAndSizeLimit: Int,
+    sameContractAndSizeDuration: FiniteDuration
   )
 
   case class WatchEntry(
