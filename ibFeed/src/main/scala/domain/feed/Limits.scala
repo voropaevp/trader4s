@@ -45,41 +45,34 @@ object Limits {
   }
 
   class ClientMessageLimit[F[_]: Async](
-    msgTs: Ref[F, Set[FiniteDuration]],
+    msgTs: Ref[F, List[FiniteDuration]],
     clntMsgLock: Semaphore[F],
     mainLock: Semaphore[F],
-    maxDelay: FiniteDuration
+    expireDur: FiniteDuration
   ) extends Limit[F] {
     override def refresh: F[Unit] =
-      mainLock
-        .permit
-        .use(_ =>
-          for {
-            now      <- Clock[F].realTime
-            initSize <- msgTs.get.map(_.size)
-            nextSize <- msgTs.updateAndGet(_.filter(_ < now - maxDelay)).map(_.size)
-            _ <- if (initSize > nextSize)
-              clntMsgLock.releaseN(initSize - nextSize)
-            else
-              ().pure[F]
-          } yield ()
-        )
+      for {
+        now      <- Clock[F].realTime
+        content  <- msgTs.get
+        nextSize <- mainLock.permit.use(_ => msgTs.updateAndGet(_.filter(_ + expireDur > now)).map(_.size))
+        _ <- if (content.size > nextSize)
+          mainLock.permit.use(_ => clntMsgLock.releaseN(content.size - nextSize))
+        else
+          Temporal[F].sleep(200.millis)
+      } yield ()
 
     override def acquire(request: Request): F[Unit] =
       for {
-        _ <- request match {
-          case _: RequestData => clntMsgLock.acquire
-          case _              => ().pure[F]
-        }
+        _   <- clntMsgLock.acquire
         now <- Clock[F].realTime
-        _   <- mainLock.permit.use(_ => msgTs.update(_ + now))
+        _   <- mainLock.permit.use(_ => msgTs.update(_ :+ now))
       } yield ()
 
     override def release(request: Request): F[Unit] = ().pure[F]
   }
 
   class Hist10MinLimit[F[_]: Async](
-    hist10Min: Ref[F, Set[FiniteDuration]],
+    hist10Min: Ref[F, List[FiniteDuration]],
     hist10MinLock: Semaphore[F],
     mainLock: Semaphore[F],
     expireDur: FiniteDuration
@@ -88,7 +81,7 @@ object Limits {
       for {
         now      <- Clock[F].realTime
         initSize <- hist10Min.get.map(_.size)
-        nextSize <- hist10Min.updateAndGet(_.filter(_ + expireDur > now)).map(_.size)
+        nextSize <- mainLock.permit.use(_ => hist10Min.updateAndGet(_.filter(_ + expireDur > now)).map(_.size))
         _ <- if (initSize > nextSize)
           mainLock.permit.use(_ => hist10MinLock.releaseN(initSize - nextSize))
         else
@@ -102,7 +95,7 @@ object Limits {
           case _              => ().pure[F]
         }
         now <- Clock[F].realTime
-        _   <- mainLock.permit.use(_ => hist10Min.update(_ + now))
+        _   <- mainLock.permit.use(_ => hist10Min.update(_ :+ now))
       } yield ()
 
     override def release(request: Request): F[Unit] = ().pure[F]
@@ -132,8 +125,8 @@ object Limits {
 
   class SameContractSizeLimit[F[_]: Async](
     limit: Int,
-    reqByContSizeLocks: Ref[F, Map[(Int, BarSize), (Set[FiniteDuration], Semaphore[F])]],
-    exireDuration: FiniteDuration
+    reqByContSizeLocks: Ref[F, Map[(Int, BarSize), (List[FiniteDuration], Semaphore[F])]],
+    expDuration: FiniteDuration,
   ) extends Limit[F] {
 
     override def refresh: F[Unit] =
@@ -143,14 +136,14 @@ object Limits {
         newMap <- map.iterator.toList.traverse {
           case (idx, (s, sem)) =>
             for {
-              nextS <- s.filter(_ < now - exireDuration).pure[F]
+              nextS <- s.filter(_ + expDuration > now ).pure[F]
               _ <- if (s.size - nextS.size > 0)
                 sem.releaseN(s.size - nextS.size)
               else
                 Temporal[F].sleep(200.millis)
             } yield
               if (s.size - nextS.size == 0)
-                List.empty[((Int, BarSize), (Set[FiniteDuration], Semaphore[F]))]
+                List.empty[((Int, BarSize), (List[FiniteDuration], Semaphore[F]))]
               else
                 List((idx, (nextS, sem)))
         }
@@ -168,10 +161,10 @@ object Limits {
               newSem   <- Semaphore[F](limit)
               _        <- newSem.acquire
               newVal <- maybeVal match {
-                case Some((s, sem)) => sem.acquire.as((s + now, sem))
-                case None           => (Set(now), newSem).pure[F]
+                case Some((s, sem)) => (sem.acquire >> Async[F].delay(println(s">$now")) )as((s :+ now, sem))
+                case None           => (List(now), newSem).pure[F]
               }
-              _ <- reqByContSizeLocks.update(_.updated(idx, newVal))
+              _ <- reqByContSizeLocks.updateAndGet(_.updated(idx, newVal)).map(println)
             } yield ()
           case _ => ().pure[F]
         }
@@ -183,12 +176,12 @@ object Limits {
 
   def make[F[_]: Async: Temporal: Clock: Logger](lim: config.LimitsConfig): Resource[F, Limits[F]] =
     for {
-      hist10Min          <- Resource.eval(Ref[F].of(Set.empty[FiniteDuration]))
+      hist10Min          <- Resource.eval(Ref[F].of(List.empty[FiniteDuration]))
       hist10MinLock      <- Resource.eval(Semaphore[F](lim.hist10MinLimit))
-      reqByContSizeLocks <- Resource.eval(Ref[F].of(Map.empty[(Int, BarSize), (Set[FiniteDuration], Semaphore[F])]))
+      reqByContSizeLocks <- Resource.eval(Ref[F].of(Map.empty[(Int, BarSize), (List[FiniteDuration], Semaphore[F])]))
       hist10MinMainLock  <- Resource.eval(Semaphore[F](1))
       msgLimitMainLock   <- Resource.eval(Semaphore[F](1))
-      msgLimit           <- Resource.eval(Ref[F].of(Set.empty[FiniteDuration]))
+      msgLimit           <- Resource.eval(Ref[F].of(List.empty[FiniteDuration]))
       msgLimitLock       <- Resource.eval(Semaphore[F](lim.clientMsgLimit))
       concurrentSubsLock <- Resource.eval(Semaphore[F](lim.concurrentSubLimit))
 
