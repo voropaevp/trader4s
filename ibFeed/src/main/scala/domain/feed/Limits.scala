@@ -125,30 +125,11 @@ object Limits {
 
   class SameContractSizeLimit[F[_]: Async](
     limit: Int,
-    reqByContSizeLocks: Ref[F, Map[(Int, BarSize), (List[FiniteDuration], Semaphore[F])]],
-    expDuration: FiniteDuration,
+    reqByContSizeLocks: Ref[F, Map[(Int, BarSize), (Semaphore[F], List[FiniteDuration])]],
+    expDuration: FiniteDuration
   ) extends Limit[F] {
 
-    override def refresh: F[Unit] =
-      for {
-        map <- reqByContSizeLocks.get
-        now <- Clock[F].realTime
-        newMap <- map.iterator.toList.traverse {
-          case (idx, (s, sem)) =>
-            for {
-              nextS <- s.filter(_ + expDuration > now ).pure[F]
-              _ <- if (s.size - nextS.size > 0)
-                sem.releaseN(s.size - nextS.size)
-              else
-                Temporal[F].sleep(200.millis)
-            } yield
-              if (s.size - nextS.size == 0)
-                List.empty[((Int, BarSize), (List[FiniteDuration], Semaphore[F]))]
-              else
-                List((idx, (nextS, sem)))
-        }
-        _ <- reqByContSizeLocks.set(Map.from(newMap.flatten))
-      } yield ()
+    override def refresh: F[Unit] = ().pure[F]
 
     override def acquire(request: Request): F[Unit] =
       for {
@@ -156,16 +137,28 @@ object Limits {
         _ <- request match {
           case r: RequestData if r.requestType == RequestType.Historic =>
             val idx = (r.contId, r.size)
-            for {
-              maybeVal <- reqByContSizeLocks.get.map(_.get(idx))
-              newSem   <- Semaphore[F](limit)
-              _        <- newSem.acquire
-              newVal <- maybeVal match {
-                case Some((s, sem)) => (sem.acquire >> Async[F].delay(println(s">$now")) )as((s :+ now, sem))
-                case None           => (List(now), newSem).pure[F]
+            reqByContSizeLocks.get.flatMap { tsById =>
+              tsById.get(idx) match {
+                case Some((lck, _)) =>
+                  lck
+                    .permit
+                    .use(_ =>
+                      for {
+                        now    <- Clock[F].realTime
+                        tsById <- reqByContSizeLocks.get
+                        (_, ts) = tsById(idx)
+                        _      <- if (ts.size >= limit) Temporal[F].sleep(expDuration + ts.head - now) else Async[F].unit
+                        tsById <- reqByContSizeLocks.get
+                        (_, ts) = tsById(idx)
+                        now <- Clock[F].realTime
+                        _   <- reqByContSizeLocks.set(tsById.updated(idx, (lck, ts.filter(_ + expDuration > now) :+ now)))
+                      } yield ()
+                    )
+
+                case None =>
+                  Semaphore[F](1).flatMap(lck => reqByContSizeLocks.set(tsById.updated(idx, (lck, List(now)))))
               }
-              _ <- reqByContSizeLocks.updateAndGet(_.updated(idx, newVal)).map(println)
-            } yield ()
+            }
           case _ => ().pure[F]
         }
       } yield ()
@@ -178,7 +171,7 @@ object Limits {
     for {
       hist10Min          <- Resource.eval(Ref[F].of(List.empty[FiniteDuration]))
       hist10MinLock      <- Resource.eval(Semaphore[F](lim.hist10MinLimit))
-      reqByContSizeLocks <- Resource.eval(Ref[F].of(Map.empty[(Int, BarSize), (List[FiniteDuration], Semaphore[F])]))
+      reqByContSizeLocks <- Resource.eval(Ref[F].of(Map.empty[(Int, BarSize), (Semaphore[F], List[FiniteDuration])]))
       hist10MinMainLock  <- Resource.eval(Semaphore[F](1))
       msgLimitMainLock   <- Resource.eval(Semaphore[F](1))
       msgLimit           <- Resource.eval(Ref[F].of(List.empty[FiniteDuration]))
@@ -193,8 +186,6 @@ object Limits {
       subLimit       = new SubLimit(concurrentSubsLock)
       limit10Min     = new Hist10MinLimit(hist10Min, hist10MinLock, hist10MinMainLock, lim.hist10MinDuration)
       clientMsgLimit = new ClientMessageLimit(msgLimit, msgLimitLock, msgLimitMainLock, lim.clientMsgDuration)
-      _ <- contractSizeLimit.refresh.foreverM.background.void
-      _ <- subLimit.refresh.foreverM.background.void
       _ <- limit10Min.refresh.foreverM.background.void
       _ <- clientMsgLimit.refresh.foreverM.background.void
     } yield new Limits(

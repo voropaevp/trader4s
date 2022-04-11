@@ -166,9 +166,9 @@ class LimitsSpec extends AsyncFreeSpec with AsyncIOSpec with Matchers with Reque
       clientMsgLimit              = 100,
       hist10MinLimit              = 100,
       sameContractAndSizeLimit    = 10,
-      clientMsgDuration           = 1000.millis,
-      hist10MinDuration           = 100.millis,
-      sameContractAndSizeDuration = 500.millis
+      clientMsgDuration           = 10000.millis,
+      hist10MinDuration           = 10000.millis,
+      sameContractAndSizeDuration = 200.millis
     )
 
     val limits: Resource[IO, Limits[IO]] = Limits.make[IO](limConfig)
@@ -179,7 +179,7 @@ class LimitsSpec extends AsyncFreeSpec with AsyncIOSpec with Matchers with Reque
             List.fill(2*limConfig.sameContractAndSizeLimit)(mockDataReqHist)
             .parTraverse(lim.acquire)
             .map(_.size)
-            .timeout(limConfig.sameContractAndSizeDuration + 500.millis)
+            .timeout(limConfig.sameContractAndSizeDuration + 100.millis)
             .handleError {
               case _: TimeoutException => "Timeout"
             }
@@ -187,13 +187,27 @@ class LimitsSpec extends AsyncFreeSpec with AsyncIOSpec with Matchers with Reque
         .asserting(_ shouldBe 2 * limConfig.sameContractAndSizeLimit)
     }
 
-    "Timeout 3x concurrent limit should timeout" in {
+    "Let 10x concurrent limit though after the 9x sameContractAndSizeDuration" in {
       limits
         .use { lim =>
-          List.fill(3*limConfig.sameContractAndSizeLimit)(mockDataReqHist)
+          List.fill(10*limConfig.sameContractAndSizeLimit)(mockDataReqHist)
             .parTraverse(lim.acquire)
             .map(_.size)
-            .timeout(limConfig.sameContractAndSizeDuration + 200.millis)
+            .timeout(9*limConfig.sameContractAndSizeDuration + 100.millis)
+            .handleError {
+              case _: TimeoutException => "Timeout"
+            }
+        }
+        .asserting(_ shouldBe 10 * limConfig.sameContractAndSizeLimit)
+    }
+
+    "Timeout 10x concurrent limit should timeout the 8x sameContractAndSizeDuration" in {
+      limits
+        .use { lim =>
+          List.fill(10*limConfig.sameContractAndSizeLimit)(mockDataReqHist)
+            .parTraverse(lim.acquire)
+            .map(_.size)
+            .timeout(7*limConfig.sameContractAndSizeDuration + 100.millis)
             .handleError {
               case _: TimeoutException => "Timeout"
             }
