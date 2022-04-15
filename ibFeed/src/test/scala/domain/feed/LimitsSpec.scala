@@ -41,7 +41,7 @@ class LimitsSpec extends AsyncFreeSpec with AsyncIOSpec with Matchers with Reque
             .toList
             .traverse(lim.acquire)
             .map(_.size)
-            .timeout(2 * (limConfig.hist10MinDuration+ 200.millis))// double the refresh timeout
+            .timeout(2 * (limConfig.hist10MinDuration + 200.millis)) // double the refresh timeout
         }
         .asserting(_ shouldBe limConfig.hist10MinLimit * 3)
     }
@@ -176,7 +176,8 @@ class LimitsSpec extends AsyncFreeSpec with AsyncIOSpec with Matchers with Reque
     "Let 2x concurrent limit though after the 1x sameContractAndSizeDuration" in {
       limits
         .use { lim =>
-            List.fill(2*limConfig.sameContractAndSizeLimit)(mockDataReqHist)
+          List
+            .fill(2 * limConfig.sameContractAndSizeLimit)(mockDataReqHist)
             .parTraverse(lim.acquire)
             .map(_.size)
             .timeout(limConfig.sameContractAndSizeDuration + 100.millis)
@@ -187,13 +188,14 @@ class LimitsSpec extends AsyncFreeSpec with AsyncIOSpec with Matchers with Reque
         .asserting(_ shouldBe 2 * limConfig.sameContractAndSizeLimit)
     }
 
-    "Let 10x concurrent limit though after the 9x sameContractAndSizeDuration" in {
+    "Let 10x concurrent limit should be allowed in 9x sameContractAndSizeDuration" in {
       limits
         .use { lim =>
-          List.fill(10*limConfig.sameContractAndSizeLimit)(mockDataReqHist)
+          List
+            .fill(10 * limConfig.sameContractAndSizeLimit)(mockDataReqHist)
             .parTraverse(lim.acquire)
             .map(_.size)
-            .timeout(9*limConfig.sameContractAndSizeDuration + 100.millis)
+            .timeout(9 * limConfig.sameContractAndSizeDuration + 100.millis)
             .handleError {
               case _: TimeoutException => "Timeout"
             }
@@ -201,13 +203,31 @@ class LimitsSpec extends AsyncFreeSpec with AsyncIOSpec with Matchers with Reque
         .asserting(_ shouldBe 10 * limConfig.sameContractAndSizeLimit)
     }
 
+    "Let 2x contacts 10x concurrent limit should be allowed in 9x sameContractAndSizeDuration" in {
+      limits
+        .use { lim =>
+          List
+            .fill(10 * limConfig.sameContractAndSizeLimit)(mockDataReqHist)
+            .zip(List.fill(10 * limConfig.sameContractAndSizeLimit)(mockDataReqHist.copy(contId = 99)))
+            .flatten { case (a, b) => List(a, b) }
+            .parTraverse(lim.acquire)
+            .map(_.size)
+            .timeout(50 * limConfig.sameContractAndSizeDuration + 200.millis)
+            .handleError {
+              case _: TimeoutException => "Timeout"
+            }
+        }
+        .asserting(_ shouldBe 20 * limConfig.sameContractAndSizeLimit)
+    }
+
     "Timeout 10x concurrent limit should timeout the 8x sameContractAndSizeDuration" in {
       limits
         .use { lim =>
-          List.fill(10*limConfig.sameContractAndSizeLimit)(mockDataReqHist)
+          List
+            .fill(10 * limConfig.sameContractAndSizeLimit)(mockDataReqHist)
             .parTraverse(lim.acquire)
             .map(_.size)
-            .timeout(7*limConfig.sameContractAndSizeDuration + 100.millis)
+            .timeout(7 * limConfig.sameContractAndSizeDuration + 100.millis)
             .handleError {
               case _: TimeoutException => "Timeout"
             }

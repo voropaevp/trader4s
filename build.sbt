@@ -124,7 +124,7 @@ lazy val ibFeed = project
       Dependencies.Libraries.log4cats,
       Dependencies.Libraries.logback,
       Dependencies.Libraries.fs2io,
-      Dependencies.Libraries.fs2rx,
+      Dependencies.Libraries.mapref,
       Dependencies.Libraries.fs2core,
       Dependencies.Libraries.scalatest,
       Dependencies.Libraries.ceTestKit,

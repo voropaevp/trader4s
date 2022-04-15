@@ -1,15 +1,15 @@
 package domain.feed
 
 import cats.syntax.all._
-import cats.effect.std.Semaphore
+import cats.effect.std.{Semaphore, UUIDGen}
 import cats.effect.{Async, Clock, Ref, Resource, Temporal}
 import cats.effect.syntax.all._
-
+import io.chrisdavenport.mapref.implicits._
 import domain.feed.Limits._
-
 import model.datastax.ib.feed.ast.{BarSize, RequestType}
 import model.datastax.ib.feed.request.{Request, RequestData}
 import org.typelevel.log4cats.Logger
+import io.chrisdavenport.mapref._
 
 import scala.concurrent.duration._
 
@@ -125,7 +125,7 @@ object Limits {
 
   class SameContractSizeLimit[F[_]: Async](
     limit: Int,
-    reqByContSizeLocks: Ref[F, Map[(Int, BarSize), (Semaphore[F], List[FiniteDuration])]],
+    reqByContSizeLocks: MapRef[F, (Int, BarSize), Option[(Semaphore[F], List[FiniteDuration])]],
     expDuration: FiniteDuration
   ) extends Limit[F] {
 
@@ -134,29 +134,32 @@ object Limits {
     override def acquire(request: Request): F[Unit] =
       for {
         now <- Clock[F].realTime
+        id <- UUIDGen.randomUUID
+        _ <- Async[F].delay( println(s"1. $id $now"))
         _ <- request match {
           case r: RequestData if r.requestType == RequestType.Historic =>
             val idx = (r.contId, r.size)
-            reqByContSizeLocks.get.flatMap { tsById =>
-              tsById.get(idx) match {
+            reqByContSizeLocks(idx).get.flatMap { {
                 case Some((lck, _)) =>
                   lck
                     .permit
                     .use(_ =>
                       for {
                         now    <- Clock[F].realTime
-                        tsById <- reqByContSizeLocks.get
-                        (_, ts) = tsById(idx)
+                        maybeValue <- reqByContSizeLocks(idx).get
+                        (_, ts) = maybeValue.get
+                        _      <- if (ts.size >= limit) Async[F].delay(println(s"$idx $now ${expDuration + ts.head - now} $ts")) else Async[F].unit
                         _      <- if (ts.size >= limit) Temporal[F].sleep(expDuration + ts.head - now) else Async[F].unit
-                        tsById <- reqByContSizeLocks.get
-                        (_, ts) = tsById(idx)
-                        now <- Clock[F].realTime
-                        _   <- reqByContSizeLocks.set(tsById.updated(idx, (lck, ts.filter(_ + expDuration > now) :+ now)))
+                        now    <- Clock[F].realTime
+                        _ <-  Async[F].delay(println(s"2. $idx $id $now"))
+                        _ <- reqByContSizeLocks.updateKeyValueIfSet(idx, ts => (ts._1, ts._2.filter(_ + expDuration > now) :+ now))
                       } yield ()
-                    )
-
+                    ) >> Async[F].delay( println(s"3. $idx $id $now"))
                 case None =>
-                  Semaphore[F](1).flatMap(lck => reqByContSizeLocks.set(tsById.updated(idx, (lck, List(now)))))
+                  Semaphore[F](1).flatMap(lck => reqByContSizeLocks(idx).update{
+                    case None => (lck, List(now)).some
+                    case Some(v) => (v._1, v._2 :+ now).some
+                  })  >> Async[F].delay( println(s"$idx $id $now <<<<"))
               }
             }
           case _ => ().pure[F]
@@ -171,14 +174,14 @@ object Limits {
     for {
       hist10Min          <- Resource.eval(Ref[F].of(List.empty[FiniteDuration]))
       hist10MinLock      <- Resource.eval(Semaphore[F](lim.hist10MinLimit))
-      reqByContSizeLocks <- Resource.eval(Ref[F].of(Map.empty[(Int, BarSize), (Semaphore[F], List[FiniteDuration])]))
+      reqByContSizeLocks <- Resource.eval(MapRef.ofSingleImmutableMap[F, (Int, BarSize), (AtomicBoolean.bool, List[FiniteDuration])]())
       hist10MinMainLock  <- Resource.eval(Semaphore[F](1))
       msgLimitMainLock   <- Resource.eval(Semaphore[F](1))
       msgLimit           <- Resource.eval(Ref[F].of(List.empty[FiniteDuration]))
       msgLimitLock       <- Resource.eval(Semaphore[F](lim.clientMsgLimit))
       concurrentSubsLock <- Resource.eval(Semaphore[F](lim.concurrentSubLimit))
 
-      contractSizeLimit = new SameContractSizeLimit(
+      contractSizeLimit = new SameContractSizeLimit[F](
         lim.sameContractAndSizeLimit,
         reqByContSizeLocks,
         lim.sameContractAndSizeDuration
