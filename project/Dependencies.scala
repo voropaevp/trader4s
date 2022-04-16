@@ -11,7 +11,6 @@ object Dependencies {
     val test                = "3.2.9"
     val CEtest              = "1.4.0"
     val ceTestKit           = "3.3.9"
-    val mapref              = ""
 
     val cassandraCore = "4.0.0"
     val logback       = "1.2.10"
@@ -41,7 +40,6 @@ object Dependencies {
     val catsCore   = "org.typelevel" %% "cats-core" % V.cats
     val kittens    = "org.typelevel" %% "kittens" % V.kittens
     val catsEffect = ("org.typelevel" %% "cats-effect" % V.ce).withSources().withJavadoc()
-    val mapref     = "io.chrisdavenport" %% "mapref" % "0.2.1"
     val fs2core    = "co.fs2" %% "fs2-core" % V.fs2
     val fs2io      = "co.fs2" %% "fs2-io" % V.fs2
     val fs2rx      = "co.fs2" %% "fs2-reactive-streams" % V.fs2
